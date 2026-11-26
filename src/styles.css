@@ -1,0 +1,999 @@
+@import "tailwindcss";
+/* ---------- Typefaces ----------
+   Self-hosted faces, all bundled as woff2 in src/assets/fonts:
+   - Prototype: the display face for headings, the wordmark and the large
+     page titles. A 1971-style signage sans: wide, geometric, upper-and-lower
+     case, with a full character set.
+   - Highway Gothic: the default for body copy, labels and controls. It stays
+     legible from 10px labels up to the medium headings.
+   - R&C Demo: a distressed, bitmap-style face kept as the display fallback.
+     It has no glyphs for 0 3 9 and several punctuation marks, so it is never
+     used for body copy or numbers.
+   - EmoticonesTityly: maps A-Z to a set of pixel emoticon faces. The agent's
+     :shortcodes: are rendered through it (see .keepsake-emoji).
+   Inter stays as a self-hosted fallback for any glyph the new faces lack. */
+@font-face {
+  font-family: "Prototype";
+  src: url("./assets/fonts/prototype.woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Highway Gothic";
+  src: url("./assets/fonts/highway-gothic.woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "R&C Demo";
+  src: url("./assets/fonts/rc-demo.woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "EmoticonesTityly";
+  src: url("./assets/fonts/keepsake-emoticons.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  /* Inline content: swap so a face is never invisible while it loads. The
+     fallback draws the literal letter, which reads as ordinary text. */
+  font-display: swap;
+}
+:root {
+  /* Dark terminal palette: one near-black ground, flat grey surfaces and
+     hairline rules. Elevation is a lift of grey plus a border, never glass.
+     The single colour is the brand orange; ok/warn/danger stay far enough from
+     it that a state colour never reads as "the accent". */
+  --bg: #0b0b0f;
+  --surface: #15161b;
+  --surface-2: #1c1d23;
+  --surface-3: #1f2026;
+  --ink: #f2f3f5;
+  --ink-2: #c3c7ce;
+  --muted: #8a8f98;
+  --muted-2: #6b707a;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-dark: rgba(255, 255, 255, 0.08);
+  /* The accent is the artwork's own grey, not a colour: the brand is a black
+     mark on a #969695 plate, so interaction is grey against near-black. */
+  --accent: #969695;
+  --accent-hover: #a8a8a7;
+  --ok: #34c759;
+  --warn: #ff9f0a;
+  --danger: #ff453a;
+  /* Raw names used by the device surface (src/device.css). They are the same
+     palette as the semantic tokens above, so a change lands in both places. */
+  --bg-rgb: 11, 11, 15;
+  --page: #050507;
+  --s1: var(--surface);
+  --s2: var(--surface-2);
+  --in: var(--surface-3);
+  --sub: var(--muted);
+  --sep: var(--line);
+  --brand: var(--accent);
+  --glass: rgba(28, 29, 35, 0.55);
+  --glass-sh:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 8px 24px rgba(0, 0, 0, 0.35);
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --slide: cubic-bezier(0.45, 0, 0.2, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --gridln: rgba(255, 255, 255, 0.025);
+  --font-sans: "Highway Gothic", "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Headings, the wordmark and the big page titles use the display face; body
+     copy, labels and controls stay on the signage sans for legibility. */
+  --font-display: "Prototype", "Highway Gothic", "Inter Variable", "Inter", system-ui, sans-serif;
+  --font-bitmap: "Prototype", "R&C Demo", "Highway Gothic", "Inter Variable", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-emoji: "EmoticonesTityly", "Highway Gothic", sans-serif;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  /* Strong ease-out for entrances: starts fast so the motion is felt at the
+     moment the user is looking, not delayed. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  /* Safe-area insets from the device (notch, cutout, home indicator). They are
+     0 on desktop and in an Android standalone window, and non-zero on iOS
+     edge-to-edge, so the layout stays identical where they do not apply. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+* {
+  box-sizing: border-box;
+}
+html {
+  -webkit-text-size-adjust: 100%;
+  /* Tap feedback is designed per control; the browser's gray flash fights it. */
+  -webkit-tap-highlight-color: transparent;
+  /* Keepsake owns its scrolling; page-level pull-to-refresh and rubber-banding
+     must not hijack it. Inner scrollers keep their own bounce via `contain`. */
+  overscroll-behavior: none;
+}
+body {
+  margin: 0;
+  min-width: 320px;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.4;
+  letter-spacing: -0.005em;
+  background-color: var(--page);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.05'/%3E%3C/svg%3E"),
+    linear-gradient(var(--gridln) 1px, transparent 1px),
+    linear-gradient(90deg, var(--gridln) 1px, transparent 1px);
+  background-size:
+    160px 160px,
+    32px 32px,
+    32px 32px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+#root {
+  min-height: 100dvh;
+}
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+button {
+  cursor: pointer;
+  border: 0;
+  background: none;
+  padding: 0;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+/* Controls respond on press, not release, and their labels are not content the
+   user should be able to select or long-press. Text inside is still selectable.
+   Content links are excluded so prose and citations stay copyable. */
+button,
+[role="button"],
+summary {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+a {
+  color: inherit;
+  touch-action: manipulation;
+}
+::selection {
+  background: rgba(255, 106, 0, 0.3);
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* ---------- Ground ---------- */
+/* The reference language sits on a single flat near-black ground. The
+   time-of-day sky, its sun, drifting clouds and film grain are gone: depth in
+   this system is drawn with hairline borders, so the art had nothing to sit
+   behind and only competed with the content. The sky phase still drives
+   nothing visual here, so Sky.tsx no longer needs to expose one. */
+.sky {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background: var(--bg);
+}
+/* ---------- Shell ---------- */
+/* ---------- Page primitives ---------- */
+.page {
+  width: 100%;
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 20px 26px 120px;
+}
+.display {
+  margin: 0;
+  font-family: var(--font-bitmap);
+  font-weight: 600;
+  font-size: 56px;
+  line-height: 0.98;
+  letter-spacing: -0.02em;
+}
+.display em {
+  /* The portfolio's one-family system marks emphasis by tone, never italics. */
+  font-style: normal;
+  color: rgba(237,237,239,0.62);
+}
+.eyebrow {
+  margin: 0 0 12px;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.primary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 22px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #0b0b0c;
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: none;
+  transition:
+    transform 0.2s var(--ease),
+    box-shadow 0.2s var(--ease),
+    background 0.2s var(--ease);
+}
+@media (hover: hover) and (pointer: fine) {
+  .primary-btn:hover {
+    background: var(--accent-hover);
+    transform: translateY(-1px);
+    box-shadow: none;
+  }
+}
+.primary-btn:active:not(:disabled) {
+  transform: translateY(0) scale(0.97);
+}
+.primary-btn.small {
+  height: 36px;
+  padding: 0 16px;
+  font-size: 13px;
+}
+
+.primary-btn:disabled {
+  background: rgba(255,255,255,0.12);
+  box-shadow: none;
+  transform: none;
+}
+.ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 40px;
+  padding: 0 18px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.035);
+  border: 1px solid rgba(255,255,255,0.05);
+  font-size: 13px;
+  color: var(--ink);
+  transition:
+    background 0.2s var(--ease),
+    transform 0.12s var(--ease);
+}
+@media (hover: hover) and (pointer: fine) {
+  .ghost-btn:hover {
+    background: rgba(255,255,255,0.065);
+    transform: translateY(-1px);
+  }
+}
+.ghost-btn.small {
+  height: 34px;
+  padding: 0 13px;
+  font-size: 12.5px;
+}
+.ghost-btn.quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+.ghost-btn.danger {
+  color: #f85149;
+}
+/* ---------- Surfaces ---------- */
+
+/* ---------- Account, runs, scheduled tasks ---------- */
+.auth-page {
+  position: relative;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 18px;
+  /* The brand artwork is the ground: black marks scattered on the plate grey.
+     A veil settles it behind the card without hiding the pattern. */
+  background: #969695 url("./assets/brand/auth-bg.webp") center / cover no-repeat;
+}
+.auth-page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 45%, rgba(5, 5, 7, 0.12), rgba(5, 5, 7, 0.5));
+  pointer-events: none;
+}
+.auth-card {
+  position: relative;
+  z-index: 1;
+  width: min(430px, 100%);
+  padding: 30px 30px 24px;
+  border-radius: 26px;
+  background: #0b0b0f;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  /* The one entrance on this surface: the card settles in rather than
+     appearing whole, so arriving at a sign-in screen has a beat. */
+  animation: rise 0.24s var(--ease-out) backwards;
+}
+.auth-brand {
+  margin-bottom: 22px;
+}
+.auth-brand p {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+.auth-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 20px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+.google-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  height: 50px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: none;
+  transition:
+    background 0.2s var(--ease),
+    transform 0.15s var(--ease);
+}
+@media (hover: hover) and (pointer: fine) {
+  .google-btn:hover:not(:disabled) {
+    background: #0b0b0c;
+  }
+}
+.google-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.google-btn:disabled {
+  opacity: 0.6;
+}
+.auth-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 4px;
+  color: var(--muted-2);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-transform: uppercase;
+}
+.auth-or::before,
+.auth-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: rgba(255,255,255,0.1);
+}
+.auth-tabs button {
+  flex: 1;
+  height: 38px;
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--muted);
+  transition:
+    background 0.2s var(--ease),
+    color 0.2s var(--ease);
+}
+.auth-tabs button.active {
+  background: var(--accent);
+  color: #0b0b0f;
+  box-shadow: none;
+}
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+/* Name and Confirm only exist in Create account, so they are the only fields
+   that arrive after the card: a short rise keeps the tab switch from being a
+   jump in height. */
+.auth-field.is-extra {
+  animation: rise 0.16s var(--ease-out) backwards;
+}
+.auth-field > span {
+  padding-left: 20px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.auth-field > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 50px;
+  padding: 0 20px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--muted-2);
+  transition:
+    border-color 0.2s var(--ease),
+    background 0.2s var(--ease);
+}
+.auth-field > div:focus-within {
+  border-color: rgba(150, 150, 149, 0.65);
+  background: rgba(255, 255, 255, 0.09);
+}
+.auth-field input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-size: 16px;
+  color: var(--ink);
+}
+.auth-error {
+  padding: 10px 16px;
+  border-radius: 16px;
+  background: rgba(248, 81, 73, 0.12);
+  color: #ff6f68;
+  font-size: 12.5px;
+}
+.auth-submit {
+  width: 100%;
+  height: 52px;
+  margin-top: 6px;
+  font-size: 14.5px;
+}
+.auth-note {
+  margin: 18px 0 0;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--muted-2);
+}
+/* ---------- Legal pages (Terms, Privacy) ---------- */
+/* These render before the auth gate, so they carry their own shell rather than
+   the app's navigation rail: a sticky hairline bar and one measured column,
+   the same flat surface and single accent as the rest of the app. */
+.legal-page {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+.legal-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: calc(14px + var(--safe-top)) 26px 14px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+.legal-home {
+  display: inline-flex;
+  align-items: center;
+  color: var(--ink);
+}
+.legal-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted);
+  transition: color 0.18s var(--ease);
+}
+@media (hover: hover) and (pointer: fine) {
+  .legal-back:hover {
+    color: var(--ink);
+  }
+}
+.legal-body {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 46px 26px 96px;
+}
+.legal-body .display {
+  font-size: 46px;
+  margin-bottom: 16px;
+}
+.legal-lede {
+  margin: 0;
+  max-width: 620px;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+.legal-updated {
+  margin: 18px 0 0;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+/* The opening paragraph sits directly in the body, outside any section, so it
+   needs its own rhythm against the "last updated" line above it. */
+.legal-body > p:not(.eyebrow):not(.legal-lede):not(.legal-updated) {
+  margin: 22px 0 0;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--ink-2);
+}
+.legal-section {
+  margin-top: 40px;
+  scroll-margin-top: 80px;
+}
+.legal-section h2 {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.legal-section p {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--ink-2);
+}
+.legal-section p:last-child,
+.legal-section ul:last-child {
+  margin-bottom: 0;
+}
+.legal-section ul {
+  margin: 0 0 12px;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.legal-section li {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--ink-2);
+}
+.legal-section strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.legal-section a,
+.legal-body a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.legal-section a:hover,
+.legal-body a:hover {
+  text-decoration: underline;
+}
+.legal-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  margin-top: 56px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+.legal-foot a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 0.18s var(--ease);
+}
+.legal-foot a:hover {
+  color: var(--ink);
+}
+.auth-legal {
+  margin: 12px 0 0;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--muted-2);
+}
+.auth-legal a {
+  color: var(--muted);
+  text-decoration: none;
+}
+.auth-legal a:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+@media (max-width: 640px) {
+  .legal-bar {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+  .legal-body {
+    padding: 34px 18px 80px;
+  }
+  .legal-body .display {
+    font-size: 34px;
+  }
+}
+
+@keyframes run-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (max-width: 720px) {
+  /* The artwork is landscape; a phone gets a portrait crop of the same field
+     so the pattern is not blown up past recognition by `cover`. */
+  .auth-page {
+    background-image: url("./assets/brand/auth-bg-mobile.webp");
+    padding: 18px 14px calc(18px + var(--safe-bottom));
+  }
+  .auth-card {
+    padding: 24px 20px 20px;
+    border-radius: 24px;
+  }
+}
+/* ---------- Forms, modal, toast ---------- */
+
+.fld {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.field-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.field-hint {
+  font-size: 10.5px;
+  color: var(--muted-2);
+}
+.input {
+  width: 100%;
+  height: 46px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.05);
+  outline: none;
+  font-size: 13.5px;
+  transition:
+    border-color 0.18s var(--ease),
+    box-shadow 0.18s var(--ease);
+}
+.input:focus {
+  border-color: rgba(150, 150, 149, 0.6);
+  box-shadow: none;
+}
+
+/* Mirrors the `pop` entry in reverse: it settles back down as it goes. */
+
+/* Toast / spinner */
+.toast-stack {
+  position: fixed;
+  left: 50%;
+  bottom: calc(26px + var(--safe-bottom));
+  z-index: 120;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+}
+.toast {
+  padding: 9px 15px;
+  border-radius: 2px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 12px;
+  box-shadow: none;
+  /* `backwards` (not `both`) so the entry animation releases the properties
+     when it ends; otherwise its fill would override the exit transition. */
+  animation: rise 0.3s var(--ease) backwards;
+  transition:
+    opacity 0.22s var(--ease),
+    transform 0.22s var(--ease);
+}
+/* Leaving by the same bottom edge it entered from, rather than vanishing. */
+.toast.is-leaving {
+  opacity: 0;
+  transform: translateY(100%);
+  pointer-events: none;
+}
+
+.spinner {
+  display: inline-block;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255,255,255,0.2);
+  border-top-color: rgba(237,237,239,0.75);
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(9px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+/* A dropdown growing out of the control above it: a short fade with a small
+   lift, so the disclosure is bridged instead of snapping into place. */
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+/* Skeleton */
+
+@keyframes shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+/* ---------- Onboarding ---------- */
+.onboarding {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: calc(24px + var(--safe-top)) 24px calc(24px + var(--safe-bottom));
+  overflow-y: auto;
+}
+.onboarding-bg {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  pointer-events: none;
+}
+.onboarding-card {
+  position: relative;
+  width: min(100%, 620px);
+  min-height: 540px;
+  display: flex;
+  flex-direction: column;
+  padding: 30px 34px 26px;
+  border-radius: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  box-shadow: none;
+  animation: pop 0.26s var(--ease-out) both;
+}
+.onboarding-brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.onboarding-step {
+  flex: 1;
+  padding: 42px 0 20px;
+  animation: rise 0.26s var(--ease-out) both;
+}
+.onboarding-title {
+  font-size: clamp(36px, 5vw, 48px);
+  line-height: 1.02;
+}
+.onboarding-copy {
+  max-width: 470px;
+  margin: 16px 0 24px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.big-input {
+  height: 52px;
+  border-radius: 2px;
+  font-size: 16px;
+  padding: 0 15px;
+  background: rgba(255,255,255,0.045);
+}
+
+.onboarding-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255,255,255,0.1);
+}
+.onboarding-footnote {
+  position: relative;
+  margin: 16px 0 0;
+  font-size: 10.5px;
+  color: rgba(237,237,239,0.45);
+  letter-spacing: 0.02em;
+}
+/* ---------- Splash ---------- */
+.splash {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  text-align: center;
+  padding: 24px;
+}
+.splash-text {
+  max-width: 420px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.splash-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-bitmap);
+  font-weight: 600;
+  font-size: 30px;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--ink);
+}
+/* The wordmark lockup used on the auth, onboarding and splash screens. */
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-bitmap);
+  font-weight: 600;
+  font-size: 30px;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--ink);
+}
+/* The mark rides on the type's own size, so the lockup stays one object at
+   every size it is used. */
+.brand-lockup .brand-mark,
+.splash-brand .brand-mark {
+  width: 1.15em;
+  height: 1.15em;
+  flex: none;
+  display: block;
+  object-fit: contain;
+  transform: translateY(0.02em);
+}
+.brand-word {
+  display: inline;
+}
+.brand-dot {
+  font-style: normal;
+  color: var(--accent);
+}
+/* ---------- Responsive ---------- */
+/* The device surface carries its own breakpoints (src/device.css). What is
+   left here is the pre-auth and legal shell: one column, no rail. */
+@media (max-width: 768px) {
+  .onboarding {
+    padding: calc(12px + var(--safe-top)) 12px calc(12px + var(--safe-bottom));
+  }
+  .onboarding-card {
+    min-height: min(600px, calc(100dvh - 24px));
+    padding: 22px 20px 18px;
+    border-radius: 2px;
+  }
+  .onboarding-step {
+    padding: 28px 0 14px;
+  }
+  .onboarding-title {
+    font-size: 36px;
+  }
+  .onboarding-foot {
+    flex-wrap: wrap;
+  }
+  .onboarding-footnote {
+    display: none;
+  }
+  .toast-stack {
+    bottom: calc(16px + var(--safe-bottom));
+  }
+}
+@media (max-width: 400px) {
+  .display {
+    font-size: 38px;
+  }
+}
+/* ---------- Press feedback ---------- */
+/* A press is confirmed by a small scale-down on the controls people tap most.
+   Kept subtle (0.96-0.97) because these are used many times a day, and limited
+   to transform so it never triggers layout. `prefers-reduced-motion` neutralises
+   it with everything else. */
+.ghost-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+/* iOS Safari zooms the page when focus lands on a field whose type is under
+   16px, and does not zoom back out. The smaller sizes are a desktop-density
+   choice, so raise them to the minimum only on touch pointers. */
+@media (pointer: coarse) {
+  .input {
+    font-size: 16px;
+  }
+}
+/* ---------- Label type ---------- */
+/* Small tracked uppercase type is set in the monospace face, the one place a
+   different family is allowed. Prose and controls stay on the signage sans. */
+.eyebrow,
+.auth-or {
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+}

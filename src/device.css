@@ -1,0 +1,1425 @@
+/* ---------- Device surface ----------
+   The chat is a phone-shaped device that becomes the whole window on a wide
+   screen, split in two: the list you keep on the left, the conversation on the
+   right. Every value here is the WhatsApp-Web-shaped language of the reference
+   template: 440px device, 40px corners, one glass header, bubbles at 18px,
+   a 52px pill field with a send button that grows out of it, and blur bands
+   at the two edges of the thread.
+
+   The two views share one frame:
+   - `#chat`  the conversation
+   - `#side`  you: your chats, the inference mode, the account
+   On a phone `#side` slides in over the chat from the right, the way the
+   template's profile view does. On a wide screen both are visible at once. */
+
+.device {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+  height: 100dvh;
+  margin: 0 auto;
+  overflow: hidden;
+  background: var(--bg);
+}
+@media (min-width: 600px) {
+  body:has(.device) {
+    display: grid;
+    place-items: center;
+  }
+  /* React mounts into #root, but the device must be the body's own grid item
+     the way the template's markup was. Without this the wrapper is what gets
+     centred, and `width: 100%` inside an auto-sized grid item resolves to 0. */
+  body:has(.device) #root {
+    display: contents;
+  }
+  .device {
+    height: min(900px, calc(100dvh - 48px));
+    border-radius: 40px;
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.07), 0 30px 90px rgba(0, 0, 0, 0.7),
+      0 0 120px rgba(255, 255, 255, 0.03);
+    isolation: isolate;
+  }
+}
+.glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: var(--glass-sh);
+}
+.view {
+  position: absolute;
+  inset: 0;
+  /* The pane is a drawer, so it takes the drawer curve: fast off the edge,
+     settled at the end. The fade is shorter than the slide so the destination
+     is not still see-through when it stops moving. */
+  transition:
+    transform 0.36s var(--ease-drawer),
+    opacity 0.24s var(--ease-out);
+}
+.ell {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- Conversation ---------- */
+#chat {
+  background:
+    radial-gradient(120% 60% at 0 0, rgba(255, 255, 255, 0.04), transparent 65%),
+    radial-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1.2px) 0 0 / 18px 18px,
+    var(--bg);
+}
+.top {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: calc(12px + var(--safe-top)) 12px 10px;
+  transition:
+    opacity 0.3s,
+    transform 0.4s var(--ease);
+}
+.top > * {
+  min-width: 0;
+}
+.av {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex: none;
+  padding: 2px;
+  display: grid;
+  place-items: center;
+  color: var(--ink);
+  transition: transform 0.14s var(--ease-out);
+}
+.av:active {
+  transform: scale(0.94);
+}
+.av img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+.av .brand-mark {
+  width: 26px;
+  height: 26px;
+}
+.nm {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  padding-left: 2px;
+}
+/* The one glass pill in the header: the mode Keepsake is in, and the way back
+   to the switch that decides it. */
+.views {
+  position: relative;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  margin-left: auto;
+  gap: 6px;
+  border-radius: 999px;
+  height: 44px;
+  padding: 0 14px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  flex: none;
+  max-width: 46%;
+  transition: transform 0.14s var(--ease-out);
+}
+.views:active {
+  transform: scale(0.96);
+}
+.views.glass {
+  background: none;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.views::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: 0;
+  right: 0;
+  top: 10px;
+  bottom: 10px;
+  border-radius: 999px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: var(--glass-sh);
+}
+.views span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.views i {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.14);
+}
+.views.is-hybrid i {
+  background: var(--brand);
+  box-shadow: 0 0 0 3px rgba(150, 150, 149, 0.18);
+}
+
+.thread {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* The top padding clears the blur band at the top edge, so the first thing in
+     the thread, the day line, which carries the session's name, is legible
+     before anything is scrolled. */
+  padding: calc(var(--top-h, 66px) + 14px) 12px calc(var(--dock-h, 76px) + 28px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  scroll-behavior: smooth;
+  overscroll-behavior: contain;
+}
+.thread::-webkit-scrollbar {
+  display: none;
+}
+.day {
+  align-self: center;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--sub);
+  margin: 14px 0 8px;
+  letter-spacing: 0.02em;
+  text-align: center;
+  max-width: 88%;
+  overflow-wrap: anywhere;
+}
+.day b {
+  font-weight: 500;
+  color: #b4b8c0;
+}
+
+.b {
+  position: relative;
+  max-width: 78%;
+  min-width: 0;
+  padding: 9px 14px;
+  border-radius: 18px;
+  font-size: 16px;
+  line-height: 1.4;
+  letter-spacing: -0.005em;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+/* A bubble enters once, when it arrives. Opening a session renders every
+   stored message at once, and replaying the entrance for each of them fired
+   dozens of animations for something the reader already knows is there. */
+.b.is-new {
+  animation: x-bub 0.3s var(--ease-out) backwards;
+}
+.b:not(.gp) {
+  margin-top: 10px;
+}
+.b.in {
+  align-self: flex-start;
+  background: #1c1d23;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+  transform-origin: left bottom;
+}
+.b.out {
+  align-self: flex-end;
+  background: #2c2c2e;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  color: #fff;
+  transform-origin: right bottom;
+}
+.b.out p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.b.wide {
+  max-width: none;
+  width: calc(100% + 24px);
+  margin-left: -12px;
+  margin-right: -12px;
+  padding: 0;
+  background: none;
+  border: 0;
+  animation: fade 0.3s var(--ease-out) backwards;
+}
+/* A refusal is not a reply, so it reads as a system line rather than a bubble. */
+.b.notice {
+  align-self: center;
+  max-width: 92%;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-2);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  animation: fade 0.24s var(--ease-out) backwards;
+}
+.b.notice strong {
+  display: block;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 2px;
+}
+.b.notice a,
+.b.notice button {
+  color: var(--accent);
+  font-weight: 500;
+}
+/* An action named inside a notice line reads as a link, not as a control. */
+.notice-link {
+  display: inline;
+  padding: 0;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.dlv {
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--sub);
+  margin: 3px 4px 0;
+  letter-spacing: 0;
+  animation: fade 0.3s 0.15s both;
+}
+/* Keepsake's receipt sits under the answer, whichever side it came from. */
+.dlv.is-in {
+  align-self: flex-start;
+  margin: 3px 4px 0;
+  max-width: 78%;
+}
+.dlv svg {
+  width: 11px;
+  height: 11px;
+  flex: none;
+}
+.dlv.is-cloud {
+  color: var(--accent);
+}
+
+.typing {
+  display: flex;
+  gap: 5px;
+  padding: 13px 14px;
+  /* It appears the moment a turn starts, so it gets the same one-off entrance
+     a reply does. */
+  animation: fade 0.18s var(--ease-out) backwards;
+}
+.typing span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #8a8f98;
+  animation: pulse 1.2s infinite ease-in-out;
+}
+.typing span:nth-child(2) {
+  animation-delay: 0.18s;
+}
+.typing span:nth-child(3) {
+  animation-delay: 0.36s;
+}
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes x-bub {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* The hold menu opens inside the row it belongs to, so it comes down from the
+   row rather than appearing on top of it. */
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes pulse {
+  0%,
+  70%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  35% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ---------- The blur bands at the two edges ---------- */
+.x-edge {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 4;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+/* The bands are the header's and the composer's own shadow, so they are placed
+   from measured boxes rather than fixed heights: `--top-h` is the header's
+   height, `--compose-top` is the distance from the composer's top edge to the
+   bottom of the device. Each stops 10px past the furniture it belongs to, which
+   is why the top band ends just below the Keepsake icon and the bottom one just
+   above the composer's line. On a wide screen, a notched phone or a five-line
+   draft the boxes change and the bands follow. */
+.x-edge--top {
+  top: 0;
+  height: calc(var(--top-h, 66px) + 10px);
+  background: linear-gradient(
+    180deg,
+    var(--bg) 0%,
+    rgba(var(--bg-rgb), 0.92) 58%,
+    rgba(var(--bg-rgb), 0) 100%
+  );
+}
+.x-edge--bot {
+  bottom: 0;
+  height: calc(var(--compose-top, 64px) + 10px);
+  background: linear-gradient(
+    0deg,
+    var(--bg) 0%,
+    rgba(var(--bg-rgb), 0.88) 52%,
+    rgba(var(--bg-rgb), 0) 100%
+  );
+}
+
+/* ---------- Dock: chips, pill, send ---------- */
+.dock {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  padding: 0 12px calc(12px + var(--safe-bottom));
+  transition:
+    opacity 0.3s,
+    transform 0.4s var(--ease);
+}
+.chipw {
+  position: relative;
+  margin: 0 -12px;
+}
+.chipw::before,
+.chipw::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 6px;
+  width: 22px;
+  z-index: 1;
+  pointer-events: none;
+}
+.chipw::before {
+  left: 0;
+  background: linear-gradient(90deg, var(--bg), rgba(var(--bg-rgb), 0));
+}
+.chipw::after {
+  right: 0;
+  background: linear-gradient(270deg, var(--bg), rgba(var(--bg-rgb), 0));
+}
+.chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 14px 10px;
+  justify-content: flex-start;
+  scroll-padding: 0 14px;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+.chips::-webkit-scrollbar {
+  display: none;
+}
+.chips button {
+  flex: none;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: 999px;
+  padding: 0 16px;
+  height: 44px;
+  font-size: 15px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--ink);
+  /* `backwards`, not `both`: a filled entrance keeps its final transform
+     forever, and an animation beats a declaration, so the press below would
+     never be seen. */
+  animation: pop 0.2s var(--ease-out) backwards;
+  transition:
+    transform 0.14s var(--ease-out),
+    box-shadow 0.25s;
+}
+.chips button:active {
+  transform: scale(0.96);
+}
+.chips button:focus-visible {
+  outline: 0;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.4),
+    0 0 0 2px rgba(255, 255, 255, 0.42);
+}
+.compose {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.circ {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: none;
+  transition: transform 0.25s var(--spring);
+}
+.circ:active {
+  transform: scale(0.9);
+}
+.circ svg {
+  width: 22px;
+  height: 22px;
+}
+.field {
+  flex: 1;
+  min-width: 0;
+  min-height: 52px;
+  /* A pill at one line (52/2), a soft rectangle once the draft wraps. */
+  border-radius: 26px;
+  display: flex;
+  align-items: flex-end;
+  padding: 4px 4px 4px 16px;
+  gap: 6px;
+}
+/* The field is a textarea, not an input: a draft has to hold paragraphs. It
+   grows to five lines (132px) and then scrolls, and Enter is a newline rather
+   than send. The 11px padding plus the 22px line is the 44px box the send
+   button sits in, so one line is still exactly the 52px pill. */
+.field textarea {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 16px;
+  line-height: 22px;
+  padding: 11px 0;
+  color: var(--ink);
+  outline: none;
+  resize: none;
+  max-height: 132px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.field textarea::-webkit-scrollbar {
+  display: none;
+}
+.field textarea::placeholder {
+  color: var(--sub);
+}
+.send {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #f2f2f7;
+  color: #0b0b0f;
+  display: grid;
+  place-items: center;
+  flex: none;
+  overflow: hidden;
+  transition:
+    transform 0.25s var(--spring),
+    width 0.18s ease-out,
+    margin 0.18s ease-out,
+    opacity 0.18s ease-out;
+}
+.send:active {
+  transform: scale(0.88);
+}
+.send svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+.send.is-off {
+  width: 0;
+  margin-left: -6px;
+  opacity: 0;
+  transform: scale(0.4);
+  pointer-events: none;
+}
+
+/* ---------- Side view: your chats, your mode, your account ----------
+   Same shapes as the conversation: glass, hairline separators, one measured
+   column. The list rows use the template's grouped-list primitive, so a row is
+   52px tall with a 30px tile, a title and a quiet second line. */
+#side {
+  transform: translateX(100%);
+  /* Parked off the edge, and out of the tab order with it: a view nobody has
+     opened must not hold focus. */
+  visibility: hidden;
+  background:
+    radial-gradient(120% 60% at 100% 0, rgba(255, 255, 255, 0.04), transparent 65%), var(--bg);
+  overflow-y: auto;
+  overflow-x: hidden;
+  z-index: 10;
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
+  overscroll-behavior: contain;
+}
+.device.side-open #side {
+  transform: none;
+  visibility: visible;
+}
+.device.side-open #chat {
+  transform: translateX(-30%);
+}
+.device.side-open .top,
+.device.side-open .dock {
+  opacity: 0;
+  pointer-events: none;
+}
+.pbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: calc(12px + var(--safe-top)) 12px 12px;
+  background: linear-gradient(var(--bg) 35%, rgba(var(--bg-rgb), 0));
+}
+.pbar h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.back {
+  color: var(--ink);
+  transition: transform 0.14s var(--ease-out);
+}
+.back:active {
+  transform: scale(0.92);
+}
+.back svg {
+  width: 20px;
+  height: 20px;
+}
+.phero {
+  text-align: center;
+  padding: 8px 20px 26px;
+}
+.big {
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+  margin: 0 auto 14px;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.1), 0 10px 40px rgba(0, 0, 0, 0.5);
+  background: var(--s1);
+}
+.big.is-mark {
+  display: grid;
+  place-items: center;
+  color: var(--ink);
+}
+.big.is-mark .brand-mark {
+  width: 74px;
+  height: 74px;
+}
+.phero h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+.phero .h {
+  color: var(--sub);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+}
+.phero .tl {
+  margin: 8px 0 0;
+  font-size: 15px;
+  color: var(--ink-2);
+}
+.sec {
+  padding: 0 16px;
+  margin-bottom: 26px;
+  scroll-margin-top: 84px;
+}
+.sec h3 {
+  margin: 0 0 8px 16px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-transform: uppercase;
+  color: var(--sub);
+  letter-spacing: 0.08em;
+}
+.pfoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: right;
+  color: var(--sub);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  padding: 12px 16px 40px;
+}
+
+/* grouped list */
+.group {
+  background: var(--s1);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px var(--sep);
+}
+.group > * {
+  position: relative;
+}
+.group > * + *::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 16px;
+  right: 0;
+  height: 1px;
+  background: var(--sep);
+}
+.group.tiled > * + *::before {
+  left: 58px;
+}
+.group a,
+.li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px 10px 16px;
+  min-height: 52px;
+  min-width: 0;
+  width: 100%;
+  text-align: left;
+  font-size: 16px;
+  color: var(--ink);
+}
+.group a:active,
+.li:active,
+.group summary:active {
+  background: rgba(255, 255, 255, 0.05);
+}
+.group.pad {
+  padding: 16px;
+}
+.ico {
+  --g1: #8e8e93;
+  --g2: #636366;
+  position: relative;
+  width: 30px;
+  height: 30px;
+  border-radius: 23%;
+  background: linear-gradient(180deg, var(--g1), var(--g2));
+  color: #fff;
+  display: grid;
+  place-items: center;
+  flex: none;
+  overflow: hidden;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.16),
+    0 1px 2px rgba(0, 0, 0, 0.35), 0 3px 8px rgba(0, 0, 0, 0.28);
+}
+.ico::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0) 48%);
+  pointer-events: none;
+}
+.ico svg {
+  position: relative;
+  z-index: 1;
+  width: 60%;
+  height: 60%;
+  display: block;
+}
+.i-vault {
+  --g1: #34c759;
+  --g2: #1f8a3c;
+}
+.i-hybrid {
+  --g1: #6e6e72;
+  --g2: #2e2e31;
+}
+.i-account {
+  --g1: #8e8e93;
+  --g2: #4a4a4e;
+}
+.i-legal {
+  --g1: #8e8e93;
+  --g2: #4a4a4e;
+}
+.i-danger {
+  --g1: #ff453a;
+  --g2: #a5211a;
+}
+.i-new {
+  --g1: #7a7a7d;
+  --g2: #333336;
+}
+.group .t {
+  flex: 1;
+  min-width: 0;
+}
+.group .t b {
+  display: block;
+  font-weight: 500;
+  font-size: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.group .t span {
+  font-size: 13px;
+  color: var(--sub);
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.li small {
+  flex: none;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--sub);
+  white-space: nowrap;
+}
+.chev {
+  width: 9px;
+  height: 15px;
+  color: #6b707a;
+  flex: none;
+  transition: transform 0.3s var(--ease);
+}
+summary {
+  list-style: none;
+  cursor: pointer;
+}
+summary::-webkit-details-marker {
+  display: none;
+}
+details[open] .chev {
+  transform: rotate(90deg);
+}
+.xd {
+  padding: 0 16px 14px;
+}
+.xd p {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+/* Everything a panel can hold stacks in one column with the same rhythm, so a
+   panel with three inputs and one with a single line read alike. */
+.xd > * + * {
+  margin-top: 8px;
+}
+.xd-note {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--sub);
+  overflow-wrap: anywhere;
+}
+.xd-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.xd-save {
+  align-self: flex-start;
+  height: 34px;
+  border-radius: 999px;
+}
+.is-strong {
+  font-weight: 600;
+}
+
+/* The session rows keep their own tap-hold menu, drawn inside the row. */
+.session-row {
+  display: block;
+  position: relative;
+}
+.session-open {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  width: 100%;
+  padding: 10px 14px 10px 16px;
+  text-align: left;
+}
+.session-open:active,
+.session-row.is-held .session-open {
+  background: rgba(255, 255, 255, 0.06);
+}
+.session-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-open[aria-current="true"] .session-title {
+  color: var(--brand);
+}
+.session-meta {
+  flex: none;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--sub);
+}
+.session-actions {
+  display: flex;
+  gap: 8px;
+  padding: 0 14px 12px 16px;
+  /* Revealed by a hold, so it is a state change the hand caused: it arrives
+     from the row's own edge instead of teleporting in under the finger. */
+  animation: panel-in 0.18s var(--ease-out) backwards;
+}
+.session-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 0 0 1px var(--sep);
+  transition:
+    transform 0.14s var(--ease-out),
+    background 0.18s var(--ease);
+}
+.session-action:active {
+  transform: scale(0.95);
+  background: rgba(255, 255, 255, 0.12);
+}
+.session-action.danger {
+  color: #ff6961;
+}
+.session-rename {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 10px 16px;
+  min-height: 52px;
+  animation: panel-in 0.18s var(--ease-out) backwards;
+}
+.session-rename input {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid var(--sep);
+  background: rgba(255, 255, 255, 0.05);
+  outline: none;
+  font-size: 15px;
+}
+.session-rename input:focus {
+  border-color: var(--brand);
+}
+.session-count {
+  font-size: 11px;
+  color: var(--sub);
+  font-variant-numeric: tabular-nums;
+}
+.session-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 10px 16px;
+  min-height: 52px;
+  animation: panel-in 0.18s var(--ease-out) backwards;
+}
+.session-confirm-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.group .empty-line {
+  padding: 16px;
+  font-size: 13px;
+  color: var(--sub);
+  line-height: 1.5;
+}
+
+/* ---------- Mode switch, as a row in the list ---------- */
+.mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px var(--sep);
+}
+.mode-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 38px;
+  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--sub);
+  transition:
+    background 0.2s var(--ease),
+    color 0.2s var(--ease),
+    transform 0.14s var(--ease-out);
+}
+.mode-option:active:not(:disabled) {
+  transform: scale(0.96);
+}
+.mode-option.is-active {
+  background: var(--s2);
+  color: var(--ink);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.mode-hint {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--sub);
+}
+/* What the current mode actually means, as two quiet facts. It mirrors the
+   receipt under an answer, so the pane and the thread describe the same thing
+   in the same shape. */
+.mode-meta {
+  display: grid;
+  gap: 4px;
+  margin: 12px 0 0;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.mode-meta div {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  justify-content: space-between;
+}
+.mode-meta dt {
+  color: var(--sub);
+  flex-shrink: 0;
+}
+.mode-meta dd {
+  margin: 0;
+  min-width: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+  color: var(--ink-2);
+}
+.mode-clear {
+  margin-top: 14px;
+  height: 36px;
+  border-radius: 999px;
+}
+.model-download {
+  margin-top: 12px;
+}
+.model-download .ghost-btn,
+.model-download progress {
+  width: 100%;
+}
+.model-download progress {
+  display: block;
+  margin-top: 10px;
+  accent-color: var(--ink);
+}
+.model-download-error {
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Answer text inside a bubble ---------- */
+.b .markdown {
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+}
+.b .markdown > :first-child {
+  margin-top: 0;
+}
+.b .markdown > :last-child {
+  margin-bottom: 0;
+}
+.b .markdown p {
+  margin: 0.55em 0;
+}
+.b .markdown h1,
+.b .markdown h2,
+.b .markdown h3 {
+  font-family: var(--font-display);
+  font-size: 1.05em;
+  font-weight: 600;
+  margin: 0.7em 0 0.35em;
+  letter-spacing: -0.01em;
+}
+.b .markdown ul,
+.b .markdown ol {
+  margin: 0.5em 0;
+  padding-left: 1.15em;
+}
+.b .markdown li {
+  margin: 0.2em 0;
+}
+.b .markdown a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.b .markdown code {
+  font-size: 0.88em;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow-wrap: anywhere;
+}
+.b .markdown pre {
+  margin: 0.6em 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.35);
+  overflow-x: auto;
+}
+.b .markdown pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.86em;
+}
+.b .markdown blockquote {
+  margin: 0.6em 0;
+  padding-left: 10px;
+  border-left: 2px solid rgba(255, 255, 255, 0.18);
+  color: var(--ink-2);
+}
+.b .markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+.b .markdown th,
+.b .markdown td {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 4px 6px;
+  text-align: left;
+}
+.b .markdown img {
+  max-width: 100%;
+  border-radius: 10px;
+}
+
+/* ---------- Consent, in the full-width bubble slot ---------- */
+.b.wide .consent-card {
+  margin: 0;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--s1);
+  padding: 14px 14px 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.consent-head {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--ink);
+  margin-bottom: 10px;
+}
+.consent-head svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--brand);
+}
+.consent-payload {
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px var(--sep);
+  padding: 10px 12px;
+  max-height: 190px;
+  overflow-y: auto;
+}
+.consent-text {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ink-2);
+}
+.consent-span {
+  background: rgba(255, 159, 10, 0.22);
+  color: #ffd08a;
+  border-radius: 4px;
+  padding: 0 3px;
+}
+.consent-findings {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--sub);
+}
+.consent-clean {
+  color: var(--ok);
+}
+.consent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.consent-list li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.consent-list code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: #ffd08a;
+}
+.consent-meta {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0 0;
+  font-size: 12px;
+}
+.consent-meta div {
+  display: flex;
+  gap: 6px;
+  justify-content: space-between;
+}
+.consent-meta dt {
+  color: var(--sub);
+}
+.consent-meta dd {
+  margin: 0;
+  min-width: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+  color: var(--ink-2);
+}
+.consent-meta code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.consent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.consent-actions .primary-btn,
+.consent-actions .ghost-btn {
+  height: 40px;
+  border-radius: 999px;
+  padding: 0 16px;
+  font-size: 14px;
+}
+.consent-note {
+  margin: 10px 0 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--sub);
+}
+
+/* ---------- Wide screen: WhatsApp Web's split ---------- */
+@media (min-width: 960px) {
+  body:has(.device) {
+    display: block;
+    background-image: none;
+  }
+  .device {
+    max-width: none;
+    width: 100%;
+    height: 100dvh;
+    border-radius: 0;
+    box-shadow: none;
+    overflow: clip;
+  }
+  #side,
+  .device.side-open #side {
+    transform: none;
+    visibility: visible;
+    right: auto;
+    width: 380px;
+    box-shadow: none;
+    border-right: 1px solid var(--sep);
+    z-index: 6;
+  }
+  #chat,
+  .device.side-open #chat {
+    transform: none;
+    left: 380px;
+    border-radius: 28px 0 0 28px;
+    overflow: hidden;
+    z-index: 7;
+    box-shadow:
+      -1px 0 0 rgba(255, 255, 255, 0.07), -18px 0 50px rgba(0, 0, 0, 0.55);
+  }
+  .device.side-open .top,
+  .device.side-open .dock {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .top {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+  /* On the split the pane is a column, not a sheet, so there is nothing to go
+     back to: the arrow would be a dead control. */
+  .pbar .back {
+    display: none;
+  }
+  .pbar {
+    padding-top: calc(18px + var(--safe-top));
+  }
+  .thread {
+    padding-left: max(24px, calc((100% - 760px) / 2));
+    padding-right: max(24px, calc((100% - 760px) / 2));
+  }
+  .b.wide {
+    width: calc(100% + 48px);
+    margin-left: -24px;
+    margin-right: -24px;
+  }
+  .dock {
+    left: 50%;
+    right: auto;
+    width: min(784px, 100%);
+    transform: translateX(-50%);
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+  .chipw {
+    margin: 0;
+  }
+  .chipw::before,
+  .chipw::after {
+    display: none;
+  }
+  .chips {
+    padding: 4px 0 10px;
+    overflow: visible;
+  }
+  .chips button {
+    flex: 1 1 0;
+    max-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .send {
+    transition: none;
+  }
+  .b,
+  .dlv,
+  .chips button,
+  .b .markdown * {
+    animation: none !important;
+  }
+}
