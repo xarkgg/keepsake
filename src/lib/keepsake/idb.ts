@@ -12,7 +12,7 @@
  * anywhere durable. It never silently degrades to a remote store.
  */
 
-import type { VaultStorage } from "../../../shared/keepsake/store.js";
+import type { VaultStorage, VaultTransaction } from "../../../shared/keepsake/store.js";
 import { MemoryStorage } from "../../../shared/keepsake/store.js";
 
 const DB_NAME = "keepsake-vault";
@@ -32,6 +32,18 @@ function openDb(): Promise<IDBDatabase> {
   });
 }
 
+function result<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("Local store request failed."));
+  });
+}
+
+async function readString(store: IDBObjectStore, key: string): Promise<string | null> {
+  const value = await result(store.get(key));
+  return typeof value === "string" ? value : null;
+}
+
 class IndexedDbStorage implements VaultStorage {
   private db: Promise<IDBDatabase> | null = null;
 
@@ -40,32 +52,31 @@ class IndexedDbStorage implements VaultStorage {
     return this.db;
   }
 
-  private async tx<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-    const db = await this.open();
-    return new Promise<T>((resolve, reject) => {
-      const transaction = db.transaction(STORE_NAME, mode);
-      const request = run(transaction.objectStore(STORE_NAME));
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error ?? new Error("Local store request failed."));
-    });
-  }
-
   async read(key: string): Promise<string | null> {
-    const value = await this.tx<string | undefined>("readonly", (store) => store.get(key));
-    return typeof value === "string" ? value : null;
+    const db = await this.open();
+    return readString(db.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME), key);
   }
 
-  async write(key: string, value: string): Promise<void> {
-    await this.tx("readwrite", (store) => store.put(value, key));
-  }
-
-  async remove(key: string): Promise<void> {
-    await this.tx("readwrite", (store) => store.delete(key));
-  }
-
-  async keys(): Promise<string[]> {
-    const keys = await this.tx<IDBValidKey[]>("readonly", (store) => store.getAllKeys());
-    return keys.filter((key): key is string => typeof key === "string");
+  async mutate(update: (tx: VaultTransaction) => Promise<void>): Promise<void> {
+    const db = await this.open();
+    // IndexedDB serializes overlapping readwrite transactions across tabs too.
+    const transaction = db.transaction(STORE_NAME, "readwrite");
+    const store = transaction.objectStore(STORE_NAME);
+    const committed = new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onabort = () => reject(transaction.error ?? new Error("Local changes were not saved."));
+    });
+    const port: VaultTransaction = {
+      read: (key) => readString(store, key),
+      write: async (key, value) => { await result(store.put(value, key)); },
+      remove: async (key) => { await result(store.delete(key)); },
+      keys: async () => (await result(store.getAllKeys())).filter((key): key is string => typeof key === "string"),
+    };
+    const work = Promise.resolve().then(() => update(port)).catch((error: unknown) => {
+      try { transaction.abort(); } catch { /* Already aborted by a failed request. */ }
+      throw error;
+    });
+    await Promise.all([work, committed]);
   }
 }
 

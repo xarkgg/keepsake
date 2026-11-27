@@ -49,7 +49,7 @@ export interface VaultMessage {
  * The storage port. An implementation only has to move strings; the store owns
  * every rule about what those strings mean.
  */
-export interface VaultStorage {
+export interface VaultTransaction {
   read(key: string): Promise<string | null>;
   write(key: string, value: string): Promise<void>;
   remove(key: string): Promise<void>;
@@ -57,21 +57,35 @@ export interface VaultStorage {
   keys(): Promise<string[]>;
 }
 
+export interface VaultStorage {
+  read(key: string): Promise<string | null>;
+  /** Read and write together. Only await operations on this transaction. */
+  mutate(update: (tx: VaultTransaction) => Promise<void>): Promise<void>;
+}
+
 /** An in-memory port: the test double, and the fallback when IndexedDB is absent. */
 export class MemoryStorage implements VaultStorage {
   private map = new Map<string, string>();
+  private writes = Promise.resolve();
 
   async read(key: string): Promise<string | null> {
-    return this.map.has(key) ? this.map.get(key)! : null;
+    await this.writes;
+    return this.map.get(key) ?? null;
   }
-  async write(key: string, value: string): Promise<void> {
-    this.map.set(key, value);
-  }
-  async remove(key: string): Promise<void> {
-    this.map.delete(key);
-  }
-  async keys(): Promise<string[]> {
-    return [...this.map.keys()];
+
+  mutate(update: (tx: VaultTransaction) => Promise<void>): Promise<void> {
+    const run = this.writes.then(async () => {
+      const next = new Map(this.map);
+      await update({
+        read: async (key) => next.get(key) ?? null,
+        write: async (key, value) => { next.set(key, value); },
+        remove: async (key) => { next.delete(key); },
+        keys: async () => [...next.keys()],
+      });
+      this.map = next;
+    });
+    this.writes = run.catch(() => undefined);
+    return run;
   }
 }
 
@@ -134,28 +148,32 @@ export class VaultStore {
       created_at: at,
       updated_at: at,
     };
-    const sessions = parseArray<VaultSession>(await this.storage.read(SESSION_INDEX));
-    sessions.push(session);
-    await this.storage.write(SESSION_INDEX, JSON.stringify(sessions));
+    await this.storage.mutate(async (tx) => {
+      const sessions = parseArray<VaultSession>(await tx.read(SESSION_INDEX));
+      sessions.push(session);
+      await tx.write(SESSION_INDEX, JSON.stringify(sessions));
+    });
     return session;
   }
 
   async renameSession(id: string, title: string | null): Promise<void> {
-    const sessions = parseArray<VaultSession>(await this.storage.read(SESSION_INDEX));
-    const next = sessions.map((session) =>
-      session.id === id ? { ...session, title, updated_at: this.now() } : session,
-    );
-    await this.storage.write(SESSION_INDEX, JSON.stringify(next));
+    await this.storage.mutate(async (tx) => {
+      const sessions = parseArray<VaultSession>(await tx.read(SESSION_INDEX));
+      const session = sessions.find((item) => item.id === id);
+      if (!session) return;
+      session.title = title;
+      session.updated_at = this.now();
+      await tx.write(SESSION_INDEX, JSON.stringify(sessions));
+    });
   }
 
   /** Removes a session and every message it owns. Deletion is total. */
   async deleteSession(id: string): Promise<void> {
-    const sessions = parseArray<VaultSession>(await this.storage.read(SESSION_INDEX));
-    await this.storage.write(
-      SESSION_INDEX,
-      JSON.stringify(sessions.filter((session) => session.id !== id)),
-    );
-    await this.storage.remove(messagesKey(id));
+    await this.storage.mutate(async (tx) => {
+      const sessions = parseArray<VaultSession>(await tx.read(SESSION_INDEX));
+      await tx.write(SESSION_INDEX, JSON.stringify(sessions.filter((session) => session.id !== id)));
+      await tx.remove(messagesKey(id));
+    });
   }
 
   async listMessages(sessionId: string): Promise<VaultMessage[]> {
@@ -163,22 +181,25 @@ export class VaultStore {
   }
 
   async addMessage(message: VaultMessage): Promise<void> {
-    const messages = parseArray<VaultMessage>(await this.storage.read(messagesKey(message.session_id)));
-    messages.push(message);
-    await this.storage.write(messagesKey(message.session_id), JSON.stringify(messages));
-    // Touch the session so it floats to the top of the list.
-    const sessions = parseArray<VaultSession>(await this.storage.read(SESSION_INDEX));
-    const next = sessions.map((session) =>
-      session.id === message.session_id ? { ...session, updated_at: this.now() } : session,
-    );
-    await this.storage.write(SESSION_INDEX, JSON.stringify(next));
+    await this.storage.mutate(async (tx) => {
+      const sessions = parseArray<VaultSession>(await tx.read(SESSION_INDEX));
+      const session = sessions.find((item) => item.id === message.session_id);
+      if (!session) throw new Error("This conversation no longer exists.");
+      const key = messagesKey(session.id);
+      const messages = parseArray<VaultMessage>(await tx.read(key));
+      messages.push(message);
+      session.updated_at = this.now();
+      await tx.write(key, JSON.stringify(messages));
+      await tx.write(SESSION_INDEX, JSON.stringify(sessions));
+    });
   }
 
   /** Wipe everything this store owns. Used by "delete all my data". */
   async clear(): Promise<void> {
-    const keys = await this.storage.keys();
-    for (const key of keys) {
-      if (key === SESSION_INDEX || key.startsWith(MESSAGES_PREFIX)) await this.storage.remove(key);
-    }
+    await this.storage.mutate(async (tx) => {
+      for (const key of await tx.keys()) {
+        if (key === SESSION_INDEX || key.startsWith(MESSAGES_PREFIX)) await tx.remove(key);
+      }
+    });
   }
 }

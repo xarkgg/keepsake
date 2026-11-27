@@ -26,7 +26,8 @@ explains why. It never sends your prompt to a cloud model in this mode.
 **Hybrid Mode** tries the device first. If the device can't answer, Keepsake
 checks the prompt for details such as email addresses, phone numbers and card
 numbers. When it finds a match, you see the exact redacted text and its
-destination. Choose **Approve and send** or **Keep it local**. If the rules
+destination. Choose **Approve and send** or **Keep it local**. Leaving the
+chat dismisses a request still waiting for approval. If the rules
 find no matches, Hybrid can send the text through Firebase AI Logic without
 asking for approval. Use Vault if the text must stay on the device.
 

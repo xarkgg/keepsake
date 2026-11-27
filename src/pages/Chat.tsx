@@ -1,11 +1,12 @@
 import { Menu } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ConsentPreview } from "../components/keepsake/ConsentPreview";
 import { SidePane } from "../components/keepsake/SidePane";
 import { SourceBadge } from "../components/keepsake/SourceBadge";
 import { KeepsakeMark } from "../components/KeepsakeMark";
 import { Markdown } from "../components/Markdown";
 import { useKeepsake } from "../lib/inference/keepsake-context";
+import type { OwnedReply } from "../lib/inference/chat-turns";
 import { DEFAULT_CLOUD_MODEL } from "../lib/inference/types";
 import { useVault } from "../lib/keepsake/vault-context";
 import { useToast } from "../lib/toast";
@@ -41,25 +42,26 @@ const SUGGESTIONS = [
  */
 export function ChatPage({
   navigate,
+  adoptSession,
   threadId,
 }: {
   navigate: (path: string) => void;
+  adoptSession: (id: string) => void;
   /** The session from the URL (`/chat/<id>`); absent means a fresh chat. */
   threadId?: string;
 }) {
   const vault = useVault();
-  const { mode, setMode, pending, request, approve, decline, busy, error } = useKeepsake();
+  const { mode, setMode, turns, turn, busy } = useKeepsake();
   const toast = useToast();
 
-  const [activeId, setActiveId] = useState<string | undefined>(threadId);
+  const activeId = threadId;
   const [messages, setMessages] = useState<VaultMessage[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [thinking, setThinking] = useState(false);
-  const [blocked, setBlocked] = useState<string | null>(null);
-  /* A cloud turn that failed, kept so the same request can be retried without
-     retyping it. The prompt is the exact string that was sent, and the user's
-     message is already in the session, a retry must not append it twice. */
-  const [failedTurn, setFailedTurn] = useState<{ sessionId: string; prompt: string } | null>(null);
+  const failedTurn = turn.phase === "failed" && turn.owner.sessionId === activeId ? turn : null;
+  const blocked = turn.phase === "blocked" && turn.owner.sessionId === activeId ? turn.message : null;
+  const pending = (turn.phase === "review" || turn.phase === "sending") && turn.card.owner.sessionId === activeId ? turn.card : null;
+  const error = failedTurn?.message ?? (pending && turn.phase === "review" ? turn.error : null);
   const [sideOpen, setSideOpen] = useState(false);
   const [value, setValue] = useState("");
   /* The ids that arrived while this view was open. Everything else is
@@ -67,6 +69,8 @@ export function ChatPage({
   const [entering, setEntering] = useState<string[]>([]);
 
   const activeIdRef = useRef<string | undefined>(threadId);
+  const view = useRef(0);
+  const working = useRef(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const deviceRef = useRef<HTMLDivElement>(null);
@@ -74,9 +78,12 @@ export function ChatPage({
   const headerRef = useRef<HTMLElement>(null);
   const composeRef = useRef<HTMLFormElement>(null);
 
-  useEffect(() => {
-    activeIdRef.current = activeId;
-  }, [activeId]);
+  const leaveView = useCallback(() => {
+    view.current++;
+    working.current = false;
+    turns.reset();
+  }, [turns]);
+  useLayoutEffect(() => leaveView, [leaveView]);
 
   /* The composer grows with the draft instead of scrolling a single line.
      Setting the height back to `auto` first is what lets it shrink again when
@@ -130,55 +137,40 @@ export function ChatPage({
     return () => observer.disconnect();
   }, []);
 
-  // Load the session's messages whenever the route changes.
+  // Refresh on a committed store change, including a reply that finished
+  // while this conversation was closed and was reopened in a new view.
   useEffect(() => {
-    activeIdRef.current = threadId;
-    setActiveId(threadId);
-    setMessages([]);
-    setEntering([]);
-    setBlocked(null);
-    setLoaded(false);
-    if (!threadId) {
+    if (!activeId) {
+      setMessages([]);
       setLoaded(true);
       return;
     }
     let cancelled = false;
-    void (async () => {
-      const stored = await vault.listMessages(threadId);
-      if (cancelled) return;
-      setMessages(stored);
-      setLoaded(true);
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // `vault.listMessages` is stable; reloading on the session id is the point.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId]);
+    void vault.listMessages(activeId).then((stored) => {
+      if (!cancelled && activeIdRef.current === activeId) {
+        setMessages(stored);
+        setLoaded(true);
+      }
+    }).catch(() => { if (!cancelled) toast("Could not read the conversation.", "error"); });
+    return () => { cancelled = true; };
+  }, [activeId, vault.listMessages, vault.sessions, toast]);
 
   // Keep the newest turn in view without yanking the page while it is scrolled.
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [messages.length, thinking, pending, blocked]);
 
-  // Switching to Vault Mode must mean "nothing goes out". A card left waiting
-  // from Hybrid would still send its payload if approved, so it is dropped with
-  // the mode that authorised it.
-  useEffect(() => {
-    if (mode === "vault" && pending) decline();
-  }, [mode, pending, decline]);
-
-  const ensureSession = useCallback(async () => {
+  const ensureSession = useCallback(async (current: () => boolean) => {
     if (activeIdRef.current) {
       const found = vault.sessions.find((session) => session.id === activeIdRef.current);
       if (found) return found;
     }
     const session = await vault.createSession(mode);
+    if (!current()) return null;
     activeIdRef.current = session.id;
-    setActiveId(session.id);
-    window.history.replaceState({}, "", `/chat/${session.id}`);
+    adoptSession(session.id);
     return session;
-  }, [mode, vault]);
+  }, [adoptSession, mode, vault]);
 
   /** Name a session from its first real request, on-device, deterministic. */
   const maybeName = useCallback(
@@ -191,138 +183,76 @@ export function ChatPage({
     [vault],
   );
 
-  const send = useCallback(
-    async (text: string) => {
-      const clean = text.trim();
-      if (!clean || thinking || busy) return;
-
-      const session = await ensureSession();
-      const history =
-        activeIdRef.current === session.id ? messages : await vault.listMessages(session.id);
-      const prompt = assemblePrompt(history, clean);
-
-      setBlocked(null);
-      setFailedTurn(null);
-      const userMessage = await vault.appendMessage({
-        sessionId: session.id,
-        role: "user",
-        content: clean,
-      });
-      setMessages((current) =>
-        session.id === activeIdRef.current ? [...current, userMessage] : current,
-      );
-      setEntering((current) => [...current, userMessage.id]);
-
-      const userTexts = [...history.filter((m) => m.role === "user").map((m) => m.content), clean];
-      void maybeName(session.id, userTexts);
-
-      setThinking(true);
-      try {
-        const outcome = await request(prompt);
-        if (outcome.kind === "answered") {
-          const assistant = await vault.appendMessage({
-            sessionId: session.id,
-            role: "assistant",
-            content: outcome.result.text,
-            source: outcome.result.source,
-            model: outcome.result.model,
-            consentHash: outcome.consentHash ?? null,
-          });
-          setMessages((current) => [...current, assistant]);
-          setEntering((current) => [...current, assistant.id]);
-        } else if (outcome.kind === "blocked") {
-          setBlocked(outcome.message);
-        } else if (outcome.kind === "failed") {
-          setFailedTurn({ sessionId: session.id, prompt });
-          toast(outcome.message, "error");
-        }
-        // "consent": the consent card renders from the parked payload below.
-      } finally {
+  const runInView = async (work: (current: () => boolean) => Promise<void>) => {
+    if (working.current || busy) return;
+    const generation = view.current;
+    const current = () => view.current === generation;
+    working.current = true;
+    setThinking(true);
+    try {
+      await work(current);
+    } catch (err) {
+      if (current()) toast(err instanceof Error ? err.message : "Could not save the turn.", "error");
+    } finally {
+      if (current()) {
+        working.current = false;
         setThinking(false);
       }
-    },
-    [thinking, busy, ensureSession, messages, vault, maybeName, request, toast],
-  );
-
-  /**
-   * Retry the turn that just failed, without appending the person's message a
-   * second time. The same prompt goes back out, so a Hybrid turn still resolves
-   * through the same sanitize/consent path it would have the first time.
-   */
-  const retry = useCallback(async () => {
-    const last = failedTurn;
-    if (!last || thinking || busy) return;
-    setBlocked(null);
-    setThinking(true);
-    try {
-      const outcome = await request(last.prompt);
-      if (outcome.kind === "answered") {
-        const assistant = await vault.appendMessage({
-          sessionId: last.sessionId,
-          role: "assistant",
-          content: outcome.result.text,
-          source: outcome.result.source,
-          model: outcome.result.model,
-          consentHash: outcome.consentHash ?? null,
-        });
-        setMessages((current) => [...current, assistant]);
-        setEntering((current) => [...current, assistant.id]);
-        setFailedTurn(null);
-      } else if (outcome.kind === "blocked") {
-        setBlocked(outcome.message);
-        setFailedTurn(null);
-      } else if (outcome.kind === "failed") {
-        toast(outcome.message, "error");
-      }
-    } finally {
-      setThinking(false);
     }
-  }, [failedTurn, thinking, busy, request, vault, toast]);
+  };
 
-  const approveTurn = useCallback(async () => {
-    const id = activeIdRef.current;
-    if (!id) return;
-    setFailedTurn(null);
-    setThinking(true);
-    try {
-      const outcome = await approve();
-      if (outcome.kind === "answered") {
-        const assistant = await vault.appendMessage({
-          sessionId: id,
-          role: "assistant",
-          content: outcome.result.text,
-          source: outcome.result.source,
-          model: outcome.result.model,
-          consentHash: outcome.consentHash ?? null,
-        });
-        setMessages((current) => [...current, assistant]);
-        setEntering((current) => [...current, assistant.id]);
-        toast("Sent with your approval");
-      } else if (outcome.kind === "failed") {
-        toast(outcome.message, "error");
-      }
-    } finally {
-      setThinking(false);
-    }
-  }, [approve, vault, toast]);
+  const saveReply = async (reply: OwnedReply | null, current: () => boolean) => {
+    if (!reply) return;
+    const assistant = await vault.appendMessage({
+      sessionId: reply.owner.sessionId, role: "assistant", content: reply.result.text,
+      source: reply.result.source, model: reply.result.model, consentHash: reply.consentHash ?? null,
+    });
+    if (current()) setEntering((ids) => [...ids, assistant.id]);
+  };
+
+  const retry = () => runInView(async (current) => {
+    if (!failedTurn || failedTurn !== turns.snapshot()) return;
+    await saveReply(await turns.request(failedTurn.owner, mode, failedTurn.prompt, failedTurn.operation), current);
+  });
+
+  const approveTurn = () => runInView(async (current) => {
+    if (!pending || pending.owner.sessionId !== activeIdRef.current) return;
+    const reply = await turns.approve(pending.owner);
+    await saveReply(reply, current);
+    if (reply && current()) toast("Sent with your approval");
+  });
 
   const startNew = useCallback(() => {
+    leaveView();
+    setThinking(false);
     setSideOpen(false);
-    setActiveId(undefined);
     activeIdRef.current = undefined;
     setMessages([]);
     setEntering([]);
-    setBlocked(null);
-    setFailedTurn(null);
     setValue("");
     navigate("/chat");
-  }, [navigate]);
+  }, [leaveView, navigate]);
 
   const submit = () => {
     const text = value.trim();
-    if (!text || thinking || busy) return;
-    setValue("");
-    void send(text);
+    if (!text || !loaded || !vault.loaded) return;
+    void runInView(async (current) => {
+      setValue("");
+      turns.reset();
+      const session = await ensureSession(current);
+      if (!session || !current()) return;
+      const history = await vault.listMessages(session.id);
+      if (!current()) return;
+      const prompt = assemblePrompt(history, text);
+      const message = await vault.appendMessage({ sessionId: session.id, role: "user", content: text });
+      if (!current()) return;
+      setEntering((ids) => [...ids, message.id]);
+      const userTexts = [...history.filter((m) => m.role === "user").map((m) => m.content), text];
+      await maybeName(session.id, userTexts);
+      if (!current()) return;
+      const owner = { sessionId: session.id, turnId: message.id };
+      await saveReply(await turns.request(owner, mode, prompt), current);
+    });
   };
 
   /**
@@ -350,7 +280,7 @@ export function ChatPage({
   const active = vault.sessions.find((session) => session.id === activeId);
   const enteringIds = new Set(entering);
   const empty = loaded && messages.length === 0 && !thinking && !pending && !blocked;
-  const canSend = Boolean(value.trim()) && !thinking && !busy;
+  const canSend = loaded && vault.loaded && Boolean(value.trim()) && !thinking && !busy;
 
   return (
     <div ref={deviceRef} className={cn("device", sideOpen && "side-open")}>
@@ -369,7 +299,7 @@ export function ChatPage({
             className={cn("views", "glass", mode === "hybrid" && "is-hybrid")}
             type="button"
             onClick={() => setMode(mode === "vault" ? "hybrid" : "vault")}
-            disabled={busy}
+            disabled={thinking || busy}
             aria-label={
               mode === "vault"
                 ? "Vault Mode. Tap to switch to Hybrid Mode."
@@ -438,10 +368,10 @@ export function ChatPage({
               <ConsentPreview
                 redaction={pending.redaction}
                 destination={`Firebase AI Logic · ${DEFAULT_CLOUD_MODEL}`}
-                busy={busy}
+                busy={thinking || busy}
                 onApprove={() => void approveTurn()}
                 onDecline={() => {
-                  decline();
+                  turns.reset();
                   toast("Kept local, nothing was sent");
                 }}
               />
@@ -538,6 +468,7 @@ export function ChatPage({
 
       <SidePane
         open={sideOpen}
+        turnInProgress={thinking}
         activeId={activeId}
         onClose={() => setSideOpen(false)}
         onOpenSession={(id) => {

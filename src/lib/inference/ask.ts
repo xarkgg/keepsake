@@ -44,6 +44,8 @@ export interface AskInput {
   engine: Engine;
   model?: string;
   operation?: Operation;
+  /** Do not start a cloud fallback for a view that has been left. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -75,6 +77,7 @@ export async function ask(input: AskInput): Promise<AskOutcome> {
     return { kind: "answered", result };
   } catch (error) {
     if (!(error instanceof ConsentRequiredError)) throw error;
+    input.signal?.throwIfAborted();
     // The task needs the cloud. Build the sanitized payload and the request an
     // approval must match. If sanitizing throws, the request is refused.
     const redaction = prepare(text);

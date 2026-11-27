@@ -78,6 +78,7 @@ test("the Keepsake modules that carry private text do not log it", () => {
     "src/lib/keepsake/idb.ts",
     "src/lib/keepsake/vault-context.tsx",
     "src/lib/inference/keepsake-context.tsx",
+    "src/lib/inference/chat-turns.ts",
     "shared/keepsake/store.ts",
     "shared/privacy/redact.ts",
     "shared/privacy/consent.ts",

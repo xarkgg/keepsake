@@ -134,7 +134,7 @@ test("clear() wipes every key the store owns", async () => {
   });
   // A key the store does not own must survive: clear() is scoped to Keepsake's
   // own data, so it can never delete an unrelated record.
-  await storage.write("something.else", "keep me");
+  await storage.mutate((tx) => tx.write("something.else", "keep me"));
   await store.clear();
   assert.deepEqual(await store.listSessions(), []);
   assert.equal(await storage.read("something.else"), "keep me");
@@ -142,7 +142,7 @@ test("clear() wipes every key the store owns", async () => {
 
 test("a corrupt blob degrades to empty rather than throwing", async () => {
   const storage = new MemoryStorage();
-  await storage.write("keepsake.sessions", "{not json");
+  await storage.mutate((tx) => tx.write("keepsake.sessions", "{not json"));
   const store = new VaultStore(storage);
   assert.deepEqual(await store.listSessions(), []);
 });
@@ -154,4 +154,27 @@ test("a read returns a copy, so a caller cannot mutate stored state", async () =
   first[0]!.title = "mutated";
   const second = await store.listSessions();
   assert.equal(second[0]?.title, null);
+});
+
+test("independent writers preserve simultaneous sessions, messages and renames", async () => {
+  const port = new MemoryStorage();
+  const a = new VaultStore(port);
+  const b = new VaultStore(port);
+  const [first, second] = await Promise.all([a.createSession("vault"), b.createSession("hybrid")]);
+  const message = { session_id: first.id, role: "user" as const, content: "sample", source: null, created_at: first.created_at };
+  await Promise.all([a.addMessage({ ...message, id: "one" }), b.addMessage({ ...message, id: "two" }), b.renameSession(first.id, "Renamed")]);
+  assert.deepEqual((await a.listMessages(first.id)).map((item) => item.id).sort(), ["one", "two"]);
+  assert.equal((await b.getSession(first.id))?.title, "Renamed");
+  assert.ok(await a.getSession(second.id));
+  await a.deleteSession(first.id);
+  await assert.rejects(b.addMessage({ ...message, id: "late" }), /no longer exists/);
+  assert.deepEqual(await b.listMessages(first.id), []);
+});
+
+test("an aborted mutation rolls back and releases the next writer", async () => {
+  const port = new MemoryStorage();
+  await assert.rejects(port.mutate(async (tx) => { await tx.write("x", "partial"); throw new Error("cancelled"); }));
+  assert.equal(await port.read("x"), null);
+  await port.mutate((tx) => tx.write("x", "saved"));
+  assert.equal(await port.read("x"), "saved");
 });

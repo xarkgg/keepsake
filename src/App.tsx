@@ -37,13 +37,17 @@ const TITLES: Record<Route["name"], string> = {
 
 function Shell() {
   const { bootstrap, loading, error, phase, reloadBootstrap } = useApp();
-  const [route, setRoute] = useState<Route>(() => parse(window.location.pathname));
+  const [location, setLocation] = useState(() => ({ route: parse(window.location.pathname), visit: 0 }));
+  const { route } = location;
+  const enterLocation = useCallback(() => {
+    const next = parse(window.location.pathname);
+    setLocation((previous) => ({ route: next, visit: previous.visit + 1 }));
+  }, []);
 
   useEffect(() => {
-    const onPop = () => setRoute(parse(window.location.pathname));
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, []);
+    window.addEventListener("popstate", enterLocation);
+    return () => window.removeEventListener("popstate", enterLocation);
+  }, [enterLocation]);
 
   useEffect(() => {
     document.title = TITLES[route.name];
@@ -52,8 +56,14 @@ function Shell() {
   const navigate = useCallback((path: string) => {
     if (path === window.location.pathname) return;
     window.history.pushState({}, "", path);
-    setRoute(parse(path));
+    enterLocation();
     window.scrollTo({ top: 0, behavior: "auto" });
+  }, [enterLocation]);
+
+  // Creating a chat gives this visit a URL without unmounting its first turn.
+  const adoptSession = useCallback((id: string) => {
+    window.history.replaceState({}, "", `/chat/${id}`);
+    setLocation((previous) => ({ ...previous, route: { name: "chat", id } }));
   }, []);
 
   // Terms and Privacy are public: they render without an account, so they are
@@ -135,20 +145,20 @@ function Shell() {
   }
 
   return (
-    <ChatPage key={route.id ?? "new"} navigate={navigate} threadId={route.id} />
+    <KeepsakeProvider key={JSON.stringify([bootstrap.account.id, location.visit])}>
+      <ChatPage navigate={navigate} adoptSession={adoptSession} threadId={route.id} />
+    </KeepsakeProvider>
   );
 }
 
 export default function App() {
   return (
     <AppProvider>
-      <KeepsakeProvider>
-        <VaultProvider>
-          <ToastProvider>
-            <Shell />
-          </ToastProvider>
-        </VaultProvider>
-      </KeepsakeProvider>
+      <VaultProvider>
+        <ToastProvider>
+          <Shell />
+        </ToastProvider>
+      </VaultProvider>
     </AppProvider>
   );
 }

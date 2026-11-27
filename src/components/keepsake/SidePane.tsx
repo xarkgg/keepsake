@@ -58,6 +58,7 @@ function deviceLabel(state: DeviceAvailability): string {
  */
 export function SidePane({
   open,
+  turnInProgress,
   activeId,
   onClose,
   onOpenSession,
@@ -66,6 +67,7 @@ export function SidePane({
   navigate,
 }: {
   open: boolean;
+  turnInProgress: boolean;
   activeId?: string;
   onClose: () => void;
   onOpenSession: (id: string) => void;
@@ -352,7 +354,6 @@ export function SidePane({
       className="view"
       id="side"
       aria-label="Your chats and settings"
-      aria-hidden={open ? undefined : true}
     >
       <div className="pbar">
         <button className="back circ glass" type="button" onClick={onClose} aria-label="Back to the chat">
@@ -512,7 +513,7 @@ export function SidePane({
       <div className="sec">
         <h3>Where it thinks</h3>
         <div className="group pad">
-          <ModeSwitch mode={mode} onChange={setMode} disabled={busy} />
+          <ModeSwitch mode={mode} onChange={setMode} disabled={turnInProgress || busy} />
           <ModeHint mode={mode} deviceReady={device} />
           <dl className="mode-meta">
             <div>

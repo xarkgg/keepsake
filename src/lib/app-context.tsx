@@ -10,6 +10,7 @@ import {
 import { api, ApiError } from "./api";
 import { configureFirebase, firebaseReady, firebaseSignInWithPassword, firebaseSignOut, firebaseSignUp } from "./firebase";
 import { signInWithFallback } from "./sign-in";
+import { SessionRequests } from "./session-requests";
 import type { Account, Bootstrap } from "./types";
 
 /**
@@ -89,22 +90,22 @@ async function clearOfflineCache(): Promise<void> {
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(sessionReducer, initial);
-  // In-flight responses from a previous session must not land after sign-out.
-  const generation = useRef(0);
+  const requests = useRef(new SessionRequests());
 
   const reloadBootstrap = useCallback(async () => {
+    const current = requests.current.beginLoad();
+    if (!current) return null;
     try {
       const data = await api<Bootstrap>("/api/bootstrap");
-      // Every load, not just a visit to the sign-in page: inference needs the
-      // Firebase config, and a reload while signed in is the common case.
+      if (!current()) return null;
       configureFirebase(data.firebase ?? null);
       dispatch({ type: "loaded", bootstrap: data });
       return data;
     } catch (err) {
+      if (!current()) return null;
       if (err instanceof ApiError && err.status === 401) {
-        generation.current += 1;
         await clearOfflineCache();
-        dispatch({ type: "unauthenticated" });
+        if (current()) dispatch({ type: "unauthenticated" });
         return null;
       }
       dispatch({ type: "failed", error: err instanceof Error ? err.message : "Could not reach Keepsake" });
@@ -112,10 +113,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const signIn = useCallback(
-    async (email: string, password: string) => {
-      generation.current += 1;
+  const authenticate = useCallback(async (action: () => Promise<void>) => {
+    const change = requests.current.beginChange();
+    try {
       await clearOfflineCache();
+      if (!change.current()) return;
+      await action();
+    } catch (error) {
+      change.finish();
+      throw error;
+    }
+    if (change.finish()) await reloadBootstrap();
+  }, [reloadBootstrap]);
+
+  const signIn = useCallback(
+    (email: string, password: string) => authenticate(async () => {
       await signInWithFallback({
         firebaseReady: firebaseReady(),
         firebaseSignIn: () => firebaseSignInWithPassword(email, password),
@@ -126,15 +138,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
           });
         },
       });
-      await reloadBootstrap();
-    },
-    [reloadBootstrap],
+    }),
+    [authenticate],
   );
 
   const signUp = useCallback(
-    async (input: { email: string; password: string; name: string }) => {
-      generation.current += 1;
-      await clearOfflineCache();
+    (input: { email: string; password: string; name: string }) => authenticate(async () => {
       if (firebaseReady()) {
         await firebaseSignUp(input);
       } else {
@@ -143,21 +152,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
           body: JSON.stringify(input),
         });
       }
-      await reloadBootstrap();
-    },
-    [reloadBootstrap],
+    }),
+    [authenticate],
   );
 
   const signOut = useCallback(async () => {
-    generation.current += 1;
+    const change = requests.current.beginChange();
     try {
       await api("/api/auth/logout", { method: "POST" });
     } catch {
       // The local state still needs to clear.
     }
+    if (!change.current()) return;
     await firebaseSignOut().catch(() => undefined);
+    if (!change.current()) return;
     await clearOfflineCache();
-    dispatch({ type: "unauthenticated" });
+    if (change.finish()) dispatch({ type: "unauthenticated" });
   }, []);
 
   useEffect(() => {

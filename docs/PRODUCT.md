@@ -14,7 +14,9 @@ address as a replacement. Read the rest of the message too: a name or detail
 in the surrounding prose may still identify someone.
 
 Choose **Approve and send** to send the text shown, or **Keep it local** to
-decline. When the rules find nothing to replace, Hybrid can use the cloud
+decline. Leaving a chat dismisses its unapproved request. If you've already
+approved and sent it, the reply belongs to that chat. When the rules find
+nothing to replace, Hybrid can use the cloud
 without an extra tap. The badge below the reply identifies its source.
 
 ## Manage your chats
