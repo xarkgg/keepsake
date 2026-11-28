@@ -335,6 +335,18 @@
   color: var(--accent);
 }
 
+/* A cloud answer that left without a review card says so, in the same
+   receipt voice, one line under the badge. */
+.dlv-note {
+  align-self: flex-start;
+  margin: 2px 4px 0;
+  max-width: 78%;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--sub);
+  animation: fade 0.3s 0.15s both;
+}
+
 .typing {
   display: flex;
   gap: 5px;
@@ -1418,6 +1430,7 @@ details[open] .chev {
   }
   .b,
   .dlv,
+  .dlv-note,
   .chips button,
   .b .markdown * {
     animation: none !important;

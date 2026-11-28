@@ -206,6 +206,7 @@ export function ChatPage({
     const assistant = await vault.appendMessage({
       sessionId: reply.owner.sessionId, role: "assistant", content: reply.result.text,
       source: reply.result.source, model: reply.result.model, consentHash: reply.consentHash ?? null,
+      unreviewed: reply.unreviewed ?? null,
     });
     if (current()) setEntering((ids) => [...ids, assistant.id]);
   };
@@ -490,7 +491,14 @@ function MessageRow({ message, isNew }: { message: VaultMessage; isNew?: boolean
       <div className={cn("b", mine ? "out" : "in", isNew && "is-new")}>
         {mine ? <p>{message.content}</p> : <Markdown>{message.content}</Markdown>}
       </div>
-      {!mine ? <SourceBadge source={message.source} model={message.model} /> : null}
+      {!mine ? (
+        <>
+          <SourceBadge source={message.source} model={message.model} />
+          {message.unreviewed ? (
+            <p className="dlv-note">Sent as written. Nothing matched the privacy rules, so nothing was removed.</p>
+          ) : null}
+        </>
+      ) : null}
     </>
   );
 }

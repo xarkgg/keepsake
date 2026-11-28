@@ -26,6 +26,11 @@ export type AskOutcome =
        * the hash, never the payload.
        */
       consentHash?: string;
+      /**
+       * Set when no rule matched, so the text left as written without a review
+       * card. The receipt says so: the rules only prove what they found.
+       */
+      unreviewed?: true;
     }
   | {
       kind: "needs-consent";
@@ -93,7 +98,7 @@ export async function ask(input: AskInput): Promise<AskOutcome> {
       // words. Asking for that is theatre; the approval is still bound to the
       // payload, and the receipt still records its fingerprint.
       const result = await send({ engine, request, redaction, approval: approve(request), model });
-      return { kind: "answered", result, consentHash: request.hash };
+      return { kind: "answered", result, consentHash: request.hash, unreviewed: true };
     }
     return { kind: "needs-consent", redaction, request, reason: "This task needs cloud inference." };
   }

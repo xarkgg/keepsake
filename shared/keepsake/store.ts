@@ -40,6 +40,12 @@ export interface VaultMessage {
    * device only under consent, without keeping the sent bytes.
    */
   consentHash?: string | null;
+  /**
+   * True when a cloud answer went out without a review card because no rule
+   * matched. The receipt says so, since the rules cannot prove the text was
+   * safe, only that nothing they know about was in it.
+   */
+  unreviewed?: boolean | null;
   /** The model that produced an assistant answer, when known. */
   model?: string | null;
   created_at: string;

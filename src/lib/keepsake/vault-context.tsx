@@ -32,6 +32,7 @@ export interface VaultState {
     content: string;
     source?: InferenceSource | null;
     consentHash?: string | null;
+    unreviewed?: boolean | null;
     model?: string | null;
   }) => Promise<VaultMessage>;
   /** Wipe every Keepsake conversation on this device. */
@@ -95,6 +96,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
       content: string;
       source?: InferenceSource | null;
       consentHash?: string | null;
+      unreviewed?: boolean | null;
       model?: string | null;
     }) => {
       const message: VaultMessage = {
@@ -104,6 +106,7 @@ export function VaultProvider({ children }: { children: ReactNode }) {
         content: input.content,
         source: input.source ?? null,
         consentHash: input.consentHash ?? null,
+        unreviewed: input.unreviewed ?? null,
         model: input.model ?? null,
         created_at: new Date().toISOString(),
       };

@@ -42,10 +42,14 @@ device**. Your messages aren't sent during setup.
 
 ## Honest limits
 
-Redaction rules can miss names and identifying details in ordinary prose.
-Conversations have no end-to-end encryption, and clearing browser storage
-deletes the local chats. Only use documents you're allowed to process, and
-check answers before relying on them.
+Redaction matches known patterns: email addresses, phone numbers, card
+numbers and the like. A match is reliable. A clean result is not proof the
+text is safe. A confidential plan, a client's finances or a relationship
+problem can pass with no match, and a clean payload is sent without asking.
+Use Vault for anything you would not put in an email. Conversations have no
+end-to-end encryption, and clearing browser storage deletes the local chats.
+Only use documents you're allowed to process, and check answers before
+relying on them.
 
 ## Documentation
 

@@ -98,6 +98,25 @@ test("Hybrid sends a clean payload without a tap, and keeps only its fingerprint
   }
   assert.equal(engine.calls.cloud, 1, "a clean payload is sent once");
   assert.equal(engine.calls.lastPrompt, "draft a short reminder");
+  if (outcome.kind === "answered") {
+    assert.equal(outcome.unreviewed, true, "the receipt must say the text left without review");
+  }
+});
+
+test("an approved payload is not marked unreviewed", async () => {
+  const engine = engineWith(null);
+  const outcome = await ask({ mode: "hybrid", text: "email jane@example.com", engine });
+  assert.equal(outcome.kind, "needs-consent");
+  if (outcome.kind !== "needs-consent") return;
+  const result = await send({
+    engine,
+    request: outcome.request,
+    redaction: outcome.redaction,
+    approval: approveText("email jane@example.com", "chat").approval,
+  });
+  assert.equal(result.source, "cloud");
+  // send() is the reviewed path; the flag is set by ask(), not by sending.
+  assert.equal("unreviewed" in outcome, false);
 });
 
 test("Hybrid still asks when the text carries personal details", async () => {

@@ -20,6 +20,8 @@ export interface OwnedReply {
   readonly owner: TurnOwner;
   result: InferenceResult;
   consentHash?: string;
+  /** The cloud answer went out without a review card because no rule matched. */
+  unreviewed?: boolean;
 }
 
 export function turnBusy(state: TurnState): boolean {
@@ -69,7 +71,7 @@ export class ChatTurns {
       const outcome = await ask({ mode, text: prompt, engine, operation, signal: run.controller.signal });
       if (outcome.kind === "answered") {
         if (this.state === run) this.publish({ phase: "idle" });
-        return { owner, result: outcome.result, consentHash: outcome.consentHash };
+        return { owner, result: outcome.result, consentHash: outcome.consentHash, unreviewed: outcome.unreviewed };
       }
       if (this.state === run) {
         this.publish(outcome.kind === "blocked"
