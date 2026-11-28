@@ -36,14 +36,11 @@ export interface VaultMessage {
   source: InferenceSource | null;
   /**
    * For a cloud answer, the hash of the sanitized payload the approval was
-   * bound to. Never the payload itself. Lets the UI prove an answer left the
-   * device only under consent, without keeping the sent bytes.
+   * bound to. The receipt keeps the fingerprint, never a second copy of the prompt.
    */
   consentHash?: string | null;
   /**
-   * True when a cloud answer went out without a review card because no rule
-   * matched. The receipt says so, since the rules cannot prove the text was
-   * safe, only that nothing they know about was in it.
+   * Older receipts can record that a prompt was sent without review.
    */
   unreviewed?: boolean | null;
   /** The model that produced an assistant answer, when known. */

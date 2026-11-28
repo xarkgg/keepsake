@@ -23,13 +23,12 @@ on another device does not bring your chats with you.
 **Vault Mode** uses only Chrome's built-in model. If it can't answer, Keepsake
 explains why. It never sends your prompt to a cloud model in this mode.
 
-**Hybrid Mode** tries the device first. If the device can't answer, Keepsake
-checks the prompt for details such as email addresses, phone numbers and card
-numbers. When it finds a match, you see the exact redacted text and its
-destination. Choose **Approve and send** or **Keep it local**. Leaving the
-chat dismisses a request still waiting for approval. If the rules
-find no matches, Hybrid can send the text through Firebase AI Logic without
-asking for approval. Use Vault if the text must stay on the device.
+**Hybrid Mode** tries the device first. If it can't answer, Keepsake shows
+the exact text it would send to Google through Firebase AI Logic, including
+any earlier messages used for context. Matches such as email addresses and
+phone numbers are replaced with placeholders. Even if nothing was replaced,
+the request waits for you to choose **Approve and send**. Choose **Keep it
+local** or leave the chat to dismiss the request without sending it.
 
 ## Set up Vault Mode
 
@@ -42,14 +41,13 @@ device**. Your messages aren't sent during setup.
 
 ## Honest limits
 
-Redaction matches known patterns: email addresses, phone numbers, card
-numbers and the like. A match is reliable. A clean result is not proof the
-text is safe. A confidential plan, a client's finances or a relationship
-problem can pass with no match, and a clean payload is sent without asking.
-Use Vault for anything you would not put in an email. Conversations have no
-end-to-end encryption, and clearing browser storage deletes the local chats.
-Only use documents you're allowed to process, and check answers before
-relying on them.
+Redaction can miss a confidential plan, a client's financial circumstances
+or a relationship problem written in ordinary language. Read the whole preview
+before sharing it. Use Vault for anything that must stay on your device.
+
+Conversations have no end-to-end encryption, and clearing browser storage
+deletes the local chats. Only use documents you're allowed to process, and
+check answers before relying on them.
 
 ## Documentation
 

@@ -13,11 +13,13 @@ meeting.` If Hybrid needs the cloud, the preview shows `Draft a reply to
 address as a replacement. Read the rest of the message too: a name or detail
 in the surrounding prose may still identify someone.
 
-Choose **Approve and send** to send the text shown, or **Keep it local** to
-decline. Leaving a chat dismisses its unapproved request. If you've already
-approved and sent it, the reply belongs to that chat. When the rules find
-nothing to replace, Hybrid can use the cloud
-without an extra tap. The badge below the reply identifies its source.
+Every cloud request waits for **Approve and send**, even when the rules find
+nothing to replace. The preview includes any recent messages used for context.
+Choose **Keep it local** or leave the chat to dismiss that request. Start a
+new chat if you want to leave earlier messages out of the next request.
+
+An approved reply belongs to the chat you sent it from. The badge below the
+reply identifies its source.
 
 ## Manage your chats
 

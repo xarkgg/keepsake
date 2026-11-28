@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ask, approveText, send } from "../src/lib/inference/ask.js";
+import { ask, send } from "../src/lib/inference/ask.js";
+import { approve } from "../shared/privacy/consent.js";
 import { destinationFor } from "../src/lib/inference/index.js";
 import type { Engine } from "../src/lib/inference/types.js";
 import { redact } from "../shared/privacy/redact.js";
@@ -77,46 +78,24 @@ test("the full hybrid flow: ask, approve, send", async () => {
   assert.equal(outcome.kind, "needs-consent");
   if (outcome.kind !== "needs-consent") return;
 
-  const approval = approveText(text, "chat").approval;
-  // The approval was generated from the same text, so it matches the request.
+  const approval = approve(outcome.request);
   const result = await send({ engine, request: outcome.request, redaction: outcome.redaction, approval });
   assert.equal(result.source, "cloud");
   // The phone number never left the device.
   assert.equal(engine.calls.lastPrompt, "note: call [phone#1]");
 });
 
-test("Hybrid sends a clean payload without a tap, and keeps only its fingerprint", async () => {
-  // Asking permission for text that is already the person's own words trains
-  // people to approve without reading. A payload with nothing personal in it is
-  // sent directly, but the receipt still records the hash of what went out.
-  const engine = engineWith(null);
-  const outcome = await ask({ mode: "hybrid", text: "draft a short reminder", engine });
-  assert.equal(outcome.kind, "answered");
-  if (outcome.kind === "answered") {
-    assert.ok(outcome.consentHash, "the receipt must record what left the device");
-    assert.equal(outcome.consentHash, redact("draft a short reminder").hash);
+test("a Hybrid fallback waits for approval even when no redaction rule matches", async () => {
+  for (const text of ["Draft a short reminder.", "We plan to close the office before the sale is announced."]) {
+    const engine = engineWith(null);
+    const outcome = await ask({ mode: "hybrid", text, engine, operation: "summarize" });
+    assert.equal(outcome.kind, "needs-consent");
+    assert.equal(outcome.redaction.count, 0);
+    assert.equal(outcome.request.preview, text);
+    assert.equal(outcome.request.operation, "summarize");
+    assert.equal(outcome.request.destination, destinationFor());
+    assert.equal(engine.calls.cloud, 0);
   }
-  assert.equal(engine.calls.cloud, 1, "a clean payload is sent once");
-  assert.equal(engine.calls.lastPrompt, "draft a short reminder");
-  if (outcome.kind === "answered") {
-    assert.equal(outcome.unreviewed, true, "the receipt must say the text left without review");
-  }
-});
-
-test("an approved payload is not marked unreviewed", async () => {
-  const engine = engineWith(null);
-  const outcome = await ask({ mode: "hybrid", text: "email jane@example.com", engine });
-  assert.equal(outcome.kind, "needs-consent");
-  if (outcome.kind !== "needs-consent") return;
-  const result = await send({
-    engine,
-    request: outcome.request,
-    redaction: outcome.redaction,
-    approval: approveText("email jane@example.com", "chat").approval,
-  });
-  assert.equal(result.source, "cloud");
-  // send() is the reviewed path; the flag is set by ask(), not by sending.
-  assert.equal("unreviewed" in outcome, false);
 });
 
 test("Hybrid still asks when the text carries personal details", async () => {
@@ -132,9 +111,10 @@ test("send refuses when the payload was edited after approval", async () => {
   assert.equal(outcome.kind, "needs-consent");
   if (outcome.kind !== "needs-consent") return;
 
-  const edited = approveText("different jane@example.com", "chat").approval; // approval for other text
+  const approval = approve(outcome.request);
+  const edited = redact("different jane@example.com");
   await assert.rejects(
-    send({ engine, request: outcome.request, redaction: outcome.redaction, approval: edited }),
+    send({ engine, request: { ...outcome.request, preview: edited.text }, redaction: edited, approval }),
   );
   assert.equal(engine.calls.cloud, 0);
 });

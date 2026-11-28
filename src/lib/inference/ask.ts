@@ -8,7 +8,7 @@
  */
 
 import { prepare, type Redaction } from "../../../shared/privacy/index.js";
-import { approve, type Approval, type ConsentRequest } from "../../../shared/privacy/consent.js";
+import type { Approval, ConsentRequest } from "../../../shared/privacy/consent.js";
 import { ConsentRequiredError, DeviceUnavailableError } from "./errors.js";
 import { destinationFor, runApprovedCloud, runInference } from "./index.js";
 import type { Engine, InferenceResult, KeepsakeMode } from "./types.js";
@@ -17,21 +17,7 @@ import type { Engine, InferenceResult, KeepsakeMode } from "./types.js";
 export type Operation = "chat" | "summarize";
 
 export type AskOutcome =
-  | {
-      kind: "answered";
-      result: InferenceResult;
-      /**
-       * For a cloud answer, the fingerprint of the sanitized payload that went
-       * out. A clean payload is sent without a tap, and the receipt still keeps
-       * the hash, never the payload.
-       */
-      consentHash?: string;
-      /**
-       * Set when no rule matched, so the text left as written without a review
-       * card. The receipt says so: the rules only prove what they found.
-       */
-      unreviewed?: true;
-    }
+  | { kind: "answered"; result: InferenceResult }
   | {
       kind: "needs-consent";
       /** The sanitized payload; the exact bytes that would leave the device. */
@@ -58,11 +44,8 @@ export interface AskInput {
  *
  * - Vault: only the device. A device that cannot answer produces `blocked`
  *   (never a cloud request).
- * - Hybrid: the device first. When that fails, the text is sanitized: if
- *   nothing personal was found, the clean payload is sent and answered with no
- *   extra tap. If anything personal was found, the turn parks as
- *   `needs-consent`, carrying the exact redacted payload for review. Either
- *   way an approval bound to the payload exists before anything leaves.
+ * - Hybrid: the device first. When it cannot answer, prepare the full prompt
+ *   for review. The number of redactions never authorizes a cloud send.
  */
 export async function ask(input: AskInput): Promise<AskOutcome> {
   const { mode, text, engine, model } = input;
@@ -87,19 +70,12 @@ export async function ask(input: AskInput): Promise<AskOutcome> {
     // approval must match. If sanitizing throws, the request is refused.
     const redaction = prepare(text);
     const operation: Operation = input.operation ?? "chat";
-    const request: ConsentRequest = {
+    const request: ConsentRequest = Object.freeze({
       hash: redaction.hash,
       operation,
       destination: destinationFor(model),
       preview: redaction.text,
-    };
-    if (redaction.count === 0) {
-      // Nothing private was found, so the preview would be the person's own
-      // words. Asking for that is theatre; the approval is still bound to the
-      // payload, and the receipt still records its fingerprint.
-      const result = await send({ engine, request, redaction, approval: approve(request), model });
-      return { kind: "answered", result, consentHash: request.hash, unreviewed: true };
-    }
+    });
     return { kind: "needs-consent", redaction, request, reason: "This task needs cloud inference." };
   }
 }
@@ -124,16 +100,4 @@ export async function send(input: SendInput): Promise<InferenceResult> {
     request: input.request,
     model: input.model,
   });
-}
-
-/** Convenience for callers that hold raw text and want an approval for it. */
-export function approveText(text: string, operation: Operation, model?: string): { redaction: Redaction; request: ConsentRequest; approval: Approval } {
-  const redaction = prepare(text);
-  const request: ConsentRequest = {
-    hash: redaction.hash,
-    operation,
-    destination: destinationFor(model),
-    preview: redaction.text,
-  };
-  return { redaction, request, approval: approve(request) };
 }

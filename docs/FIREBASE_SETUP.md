@@ -112,10 +112,11 @@ provides) so accounts persist, see `OPERATIONS.md`.
 
 1. `/api/auth/config` returns the Firebase web config, and `/api/health`
    reports `capabilities.appCheck: true`.
-2. **One real cloud request** through Firebase AI Logic on the deployed URL: a
-   prompt that needs the cloud returns an answer with the `IN_CLOUD` source badge
-   (the SDK's own `inferenceSource`, not an assumption). A prompt that carries an
-   email address should show the consent card with the sanitized payload first.
+2. In Hybrid Mode on a browser without a local model, submit a sample prompt
+   without personal identifiers. Check that the preview shows the prompt as
+   written and **Keep it local** sends no model request. In a new chat, use a
+   sample email address and check that the preview replaces it with `[email#1]`.
+   Choose **Approve and send** and verify the answer has a Cloud badge.
 3. **One real on-device request** for Vault Mode, which needs desktop Chrome with the
    built-in model (Gemini Nano) installed. Chrome 148+ needs no flag; 139–147
    need the Prompt API flag.

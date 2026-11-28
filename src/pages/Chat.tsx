@@ -7,7 +7,7 @@ import { KeepsakeMark } from "../components/KeepsakeMark";
 import { Markdown } from "../components/Markdown";
 import { useKeepsake } from "../lib/inference/keepsake-context";
 import type { OwnedReply } from "../lib/inference/chat-turns";
-import { DEFAULT_CLOUD_MODEL } from "../lib/inference/types";
+import { CLOUD_DESTINATION_PREFIX } from "../lib/inference/types";
 import { useVault } from "../lib/keepsake/vault-context";
 import { useToast } from "../lib/toast";
 import { cn } from "../lib/utils";
@@ -206,7 +206,6 @@ export function ChatPage({
     const assistant = await vault.appendMessage({
       sessionId: reply.owner.sessionId, role: "assistant", content: reply.result.text,
       source: reply.result.source, model: reply.result.model, consentHash: reply.consentHash ?? null,
-      unreviewed: reply.unreviewed ?? null,
     });
     if (current()) setEntering((ids) => [...ids, assistant.id]);
   };
@@ -218,7 +217,7 @@ export function ChatPage({
 
   const approveTurn = () => runInView(async (current) => {
     if (!pending || pending.owner.sessionId !== activeIdRef.current) return;
-    const reply = await turns.approve(pending.owner);
+    const reply = await turns.approve(pending);
     await saveReply(reply, current);
     if (reply && current()) toast("Sent with your approval");
   });
@@ -368,12 +367,12 @@ export function ChatPage({
             <div className="b wide">
               <ConsentPreview
                 redaction={pending.redaction}
-                destination={`Firebase AI Logic · ${DEFAULT_CLOUD_MODEL}`}
+                destination={pending.request.destination.replace(`${CLOUD_DESTINATION_PREFIX}:`, "Firebase AI Logic · ")}
                 busy={thinking || busy}
                 onApprove={() => void approveTurn()}
                 onDecline={() => {
                   turns.reset();
-                  toast("Kept local, nothing was sent");
+                  toast("Cloud request dismissed");
                 }}
               />
             </div>
@@ -494,7 +493,7 @@ function MessageRow({ message, isNew }: { message: VaultMessage; isNew?: boolean
       {!mine ? (
         <>
           <SourceBadge source={message.source} model={message.model} />
-          {message.unreviewed ? (
+          {message.source === "cloud" && message.unreviewed ? (
             <p className="dlv-note">Sent as written. Nothing matched the privacy rules, so nothing was removed.</p>
           ) : null}
         </>

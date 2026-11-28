@@ -211,13 +211,12 @@ Transient failures can be retried with the same approved text and destination.
 A quota error ends the attempt. Vault uses `ONLY_ON_DEVICE`, and approved cloud
 requests use `ONLY_IN_CLOUD`.
 
-**What actually leaves the device.** Nothing, in Vault Mode. In Hybrid Mode, only
-the sanitized payload: the text is passed through the deterministic privacy
-pipeline (`shared/privacy/`), and the approval is bound to `sha256(payload) +
-operation + destination`. When the payload carries personal details the exact
-redacted string is shown for approval first; when it carries none, the clean
-payload is sent without a tap (the policy layer mints the same bound approval).
-Change any of the three and the request is refused.
+**What goes to the cloud model.** Vault Mode sends no prompt. In Hybrid Mode,
+the browser runs the full prompt through `shared/privacy/`, shows the resulting
+text and destination, and waits for the user's approval on every cloud fallback.
+Zero matches means the preview is unchanged. The send checks the outgoing text
+against the preview and binds approval to `sha256(payload)`, operation and
+destination. Changing any of them invalidates the approval.
 
 ## Install as an app
 

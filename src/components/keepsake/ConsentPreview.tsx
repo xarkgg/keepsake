@@ -1,4 +1,4 @@
-import { ShieldCheck, X } from "lucide-react";
+import { Cloud, X } from "lucide-react";
 import type { Redaction } from "../../../shared/privacy/index";
 import { cn } from "../../lib/utils";
 
@@ -22,19 +22,14 @@ export function ConsentPreview({
   onApprove: () => void;
   onDecline: () => void;
 }) {
-  const clean = redaction.count === 0;
   return (
     <div className="consent-card" role="dialog" aria-label="Approve cloud inference">
       <header className="consent-head">
-        <ShieldCheck size={15} strokeWidth={1.9} />
-        <span>
-          {clean
-            ? "This needs the cloud. Here is exactly what would be sent."
-            : "Personal details were found and removed. Here is exactly what would be sent."}
-        </span>
+        <Cloud size={15} strokeWidth={1.9} />
+        <span>Review the text before sending it to Google.</span>
       </header>
 
-      <div className="consent-payload" aria-label="Sanitized payload">
+      <div className="consent-payload" role="region" aria-label="Text to send" tabIndex={0}>
         {redaction.spans.length ? (
           <HighlightedText text={redaction.text} spans={redaction.spans} />
         ) : (
@@ -43,8 +38,8 @@ export function ConsentPreview({
       </div>
 
       <div className="consent-findings">
-        {clean ? (
-          <span className="consent-clean">No personal data detected.</span>
+        {redaction.count === 0 ? (
+          <span>No patterns matched. The text above would be sent as written.</span>
         ) : (
           <ul className="consent-list">
             {redaction.findings.map((finding) => (
@@ -73,6 +68,7 @@ export function ConsentPreview({
         </div>
       </dl>
 
+      <p className="consent-note">Check for details the rules can miss, like a name or a confidential plan.</p>
       <div className="consent-actions">
         <button className="primary-btn small" onClick={onApprove} disabled={busy}>
           {busy ? "Sending…" : "Approve and send"}
@@ -81,11 +77,6 @@ export function ConsentPreview({
           <X size={13} /> Keep it local
         </button>
       </div>
-      <p className="consent-note">
-        {clean
-          ? "Your original text stays on this device. Only the string above is sent."
-          : "Your original text stays on this device. Only the redacted string above is sent."}
-      </p>
     </div>
   );
 }
@@ -110,7 +101,7 @@ function HighlightedText({
       if (span.start > cursor) nodes.push(text.slice(cursor, span.start));
       nodes.push(
         <mark key={`${span.rule}-${index}`} className="consent-span" title={span.label}>
-          {span.placeholder}
+          {text.slice(span.start, span.end)}
         </mark>,
       );
       cursor = span.end;

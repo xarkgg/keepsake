@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ChatTurns, turnBusy } from "../src/lib/inference/chat-turns.js";
 import type { Engine, EngineResult } from "../src/lib/inference/types.js";
+import { sha256Hex } from "../shared/privacy/sha256.js";
 
 const first = { sessionId: "chat-a", turnId: "message-a" };
 const other = { sessionId: "chat-b", turnId: "message-b" };
@@ -19,6 +20,12 @@ function engine(generate: Engine["generate"]): Engine {
 }
 
 function deviceUnavailable(): never { throw new Error("No local model"); }
+
+function review(turns: ChatTurns) {
+  const state = turns.snapshot();
+  assert.equal(state.phase, "review");
+  return state.card;
+}
 
 test("an engine setup failure unlocks the turn and allows a subsequent request", async () => {
   let initial = true;
@@ -42,15 +49,38 @@ test("a card is bound to its original chat and message, even if its caller chang
   }));
   const owner = { ...first };
   await turns.request(owner, "hybrid", personal);
+  const card = review(turns);
   owner.sessionId = other.sessionId;
-  assert.equal(await turns.approve(owner), null);
-  assert.equal(await turns.approve({ ...first, turnId: other.turnId }), null);
+  assert.equal(await turns.approve({ ...card, owner }), null);
+  assert.equal(await turns.approve({ ...card, owner: { ...first, turnId: other.turnId } }), null);
   assert.deepEqual(sent, []);
-  const reply = await turns.approve(first);
+  const reply = await turns.approve(card);
   assert.deepEqual(reply?.owner, first);
   assert.deepEqual(sent, ["Reply to [email#1]"]);
   assert.ok(reply?.consentHash);
-  assert.equal(await turns.approve(first), null);
+  assert.equal(await turns.approve(card), null);
+});
+
+test("declining a no-match preview keeps it local and consent covers only one turn", async () => {
+  const sent: string[] = [];
+  const turns = new ChatTurns(async () => engine(async (where, text) => {
+    if (where === "on-device") return deviceUnavailable();
+    sent.push(text);
+    return { text: "Reply", reportedSource: "in_cloud" };
+  }));
+  const text = "We can no longer afford the rent.";
+  await turns.request(first, "hybrid", text);
+  const declined = review(turns);
+  turns.reset();
+  assert.equal(await turns.approve(declined), null);
+  await turns.request(first, "hybrid", text);
+  const next = review(turns);
+  assert.equal(await turns.approve(declined), null, "even an identical preview for the same message needs a new click");
+  assert.deepEqual(sent, []);
+  const reply = await turns.approve(next);
+  assert.equal(reply?.consentHash, sha256Hex(text));
+  assert.equal(await turns.approve(next), null);
+  assert.deepEqual(sent, [text]);
 });
 
 test("leaving before the device finishes cannot park an old card or start a cloud fallback", async () => {
@@ -84,9 +114,10 @@ test("an approved reply finishing after navigation keeps its origin and cannot e
     return cloud.promise;
   }));
   await turns.request(first, "hybrid", personal);
-  const approved = turns.approve(first);
+  const firstCard = review(turns);
+  const approved = turns.approve(firstCard);
   await started.promise;
-  assert.equal(await turns.approve(first), null);
+  assert.equal(await turns.approve(firstCard), null);
   turns.reset();
   await turns.request(other, "hybrid", personal);
   const newCard = turns.snapshot();
@@ -95,7 +126,7 @@ test("an approved reply finishing after navigation keeps its origin and cannot e
   assert.deepEqual((await approved)?.owner, first);
   assert.equal(turns.snapshot(), newCard);
   turns.reset();
-  assert.equal(await turns.approve(other), null);
+  assert.equal(await turns.approve(newCard.card), null);
   assert.equal(sends, 1);
 });
 
@@ -108,9 +139,10 @@ test("failed approval preserves the same redacted card for another decision", as
     return { text: "Sent" };
   }));
   await turns.request(first, "hybrid", personal);
-  assert.equal(await turns.approve(first), null);
+  const card = review(turns);
+  assert.equal(await turns.approve(card), null);
   assert.equal(turns.snapshot().phase, "review");
   assert.equal(turnBusy(turns.snapshot()), false);
-  assert.equal((await turns.approve(first))?.result.text, "Sent");
+  assert.equal((await turns.approve(card))?.result.text, "Sent");
   assert.deepEqual(prompts, ["Reply to [email#1]", "Reply to [email#1]"]);
 });

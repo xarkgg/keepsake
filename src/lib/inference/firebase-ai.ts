@@ -50,7 +50,6 @@ function loadAi(): Promise<AiModule> {
 export class FirebaseAiEngine implements Engine {
   private readonly app: FirebaseApp;
   private deviceModel: GenerativeModel | null = null;
-  private cloudModel: GenerativeModel | null = null;
   private readonly deviceCreateOptions: DeviceCreateOptions = {
     expectedInputs: [{ type: "text", languages: ["en"] }],
     expectedOutputs: [{ type: "text", languages: ["en"] }],
@@ -87,24 +86,14 @@ export class FirebaseAiEngine implements Engine {
   }
 
   private async cloud(model: string): Promise<GenerativeModel> {
-    if (!this.cloudModel) {
-      const { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode } = await loadAi();
-      // Cloud inference runs on its own app so the AI service is always built
-      // after App Check is ready (see getCloudFirebaseApp). Building it here
-      // means a Throwing on-device model on the main app cannot poison it.
-      const app = await getCloudFirebaseApp();
-      // `...CLOUD_AI_SETUP` is not optional in practice: with App Check replay
-      // protection on, a normal token is answered 401 "Firebase App Check token
-      // is invalid" even though attestation succeeded.
-      const ai = getAI(app, { backend: new GoogleAIBackend(), ...CLOUD_AI_SETUP });
-      this.cloudModel = getGenerativeModel(ai, {
-        mode: InferenceMode.ONLY_IN_CLOUD,
-        // The persona belongs inside `inCloudParams`: at the top level the SDK
-        // drops it with a warning whenever a hybrid `mode` is set.
-        inCloudParams: { model, systemInstruction: SYSTEM_INSTRUCTION },
-      });
-    }
-    return this.cloudModel;
+    const { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode } = await loadAi();
+    // Reuse the App Check-enabled service, but select the model named in this approval.
+    const app = await getCloudFirebaseApp();
+    const ai = getAI(app, { backend: new GoogleAIBackend(), ...CLOUD_AI_SETUP });
+    return getGenerativeModel(ai, {
+      mode: InferenceMode.ONLY_IN_CLOUD,
+      inCloudParams: { model, systemInstruction: SYSTEM_INSTRUCTION },
+    });
   }
 
   async availability(): Promise<DeviceAvailability> {

@@ -10,6 +10,7 @@
 
 import { ConsentInvalidError, ConsentRequiredError, DeviceUnavailableError } from "./errors.js";
 import { assertConsent, type Approval, type ConsentRequest } from "../../../shared/privacy/consent.js";
+import { sha256Hex } from "../../../shared/privacy/sha256.js";
 import { CLOUD_DESTINATION_PREFIX, DEFAULT_CLOUD_MODEL, ON_DEVICE_MODEL_LABEL } from "./types.js";
 import type { Engine, InferenceResult, KeepsakeMode } from "./types.js";
 
@@ -75,13 +76,20 @@ export interface CloudRunOptions {
  * call fails rather than mislabel an answer as local.
  */
 export async function runApprovedCloud(options: CloudRunOptions): Promise<InferenceResult> {
+  const { request, sanitized } = options;
   const model = options.model ?? DEFAULT_CLOUD_MODEL;
   try {
-    assertConsent(options.approval, options.request);
+    assertConsent(options.approval, request);
   } catch (error) {
     throw new ConsentInvalidError(error instanceof Error ? error.message : "consent did not match");
   }
-  const result = await options.engine.generate("cloud", options.sanitized, { model });
+  if (request.preview !== sanitized || request.hash !== sha256Hex(sanitized)) {
+    throw new ConsentInvalidError("the text no longer matches the preview");
+  }
+  if (request.destination !== destinationFor(model)) {
+    throw new ConsentInvalidError("the destination no longer matches the preview");
+  }
+  const result = await options.engine.generate("cloud", sanitized, { model });
   if (result.reportedSource === "on_device") {
     throw new ConsentInvalidError("the cloud call was reported as on-device");
   }

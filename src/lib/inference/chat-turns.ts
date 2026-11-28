@@ -20,8 +20,6 @@ export interface OwnedReply {
   readonly owner: TurnOwner;
   result: InferenceResult;
   consentHash?: string;
-  /** The cloud answer went out without a review card because no rule matched. */
-  unreviewed?: boolean;
 }
 
 export function turnBusy(state: TurnState): boolean {
@@ -71,7 +69,7 @@ export class ChatTurns {
       const outcome = await ask({ mode, text: prompt, engine, operation, signal: run.controller.signal });
       if (outcome.kind === "answered") {
         if (this.state === run) this.publish({ phase: "idle" });
-        return { owner, result: outcome.result, consentHash: outcome.consentHash, unreviewed: outcome.unreviewed };
+        return { owner, result: outcome.result };
       }
       if (this.state === run) {
         this.publish(outcome.kind === "blocked"
@@ -85,16 +83,17 @@ export class ChatTurns {
     return null;
   }
 
-  async approve(owner: TurnOwner): Promise<OwnedReply | null> {
+  async approve(card: Card): Promise<OwnedReply | null> {
     const state = this.state;
-    if (state.phase !== "review" || state.card.owner.sessionId !== owner.sessionId || state.card.owner.turnId !== owner.turnId) return null;
-    const { card } = state;
+    // A stale click must not approve a replacement preview, even for the same message.
+    if (state.phase !== "review" || state.card !== card) return null;
     const run = { phase: "sending" as const, card };
     this.publish(run);
     try {
+      const approval = bindApproval(card.request);
       const engine = await this.load();
       if (this.state !== run) return null;
-      const result = await send({ engine, request: card.request, redaction: card.redaction, approval: bindApproval(card.request) });
+      const result = await send({ engine, request: card.request, redaction: card.redaction, approval });
       if (this.state === run) this.publish({ phase: "idle" });
       // An already-sent request can finish after navigation. Its owner never changes.
       return { owner: card.owner, result, consentHash: card.request.hash };

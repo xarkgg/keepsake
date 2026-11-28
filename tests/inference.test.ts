@@ -150,6 +150,12 @@ test("a cloud call is refused when the destination changed", async () => {
     runApprovedCloud({ sanitized, engine, approval, request }),
     (error: unknown) => error instanceof ConsentInvalidError,
   );
+  // A stale request can still match its approval even after the caller changes the actual model.
+  await assert.rejects(
+    runApprovedCloud({ sanitized, engine, approval: approve(request), request, model: "some-other-model" }),
+    ConsentInvalidError,
+  );
+  assert.equal(engine.calls.cloud, 0);
 });
 
 test("a response wrongly reported as on-device is refused, not mislabelled", async () => {

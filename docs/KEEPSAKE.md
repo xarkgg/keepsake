@@ -15,10 +15,9 @@ through the [redaction rules](../shared/privacy/rules.ts) before a cloud request
 can be made. Matching values become placeholders such as `[email#1]`. The rules
 identify specific patterns and do not guarantee that the text is anonymous.
 
-- If the rules find a match, the consent card shows the redacted text, what was
-  replaced, the destination and a fingerprint. Declining sends no cloud request.
-- If there are no matches, the same sanitized text can be sent without a prompt
-  for approval.
+The consent card shows the full outgoing text, any replacements, the destination
+and a fingerprint. Every cloud fallback waits for explicit approval on that turn,
+including when the preview is unchanged. Declining sends no cloud request.
 
 The [consent check](../shared/privacy/consent.ts) binds approval to the payload
 hash, operation and destination. A different request needs a new approval.
